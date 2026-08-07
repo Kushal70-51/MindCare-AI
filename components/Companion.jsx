@@ -1,127 +1,98 @@
-"use client";
-import { useCallback, useMemo, useRef, useState } from "react";
-import Orb from "./Orb";
-import StepDots from "./StepDots";
-import Toast from "./Toast";
-import { useSpeech } from "@/hooks/useSpeech";
+'use client';
 
-import Welcome from "./screens/Welcome";
-import NameStep from "./screens/NameStep";
-import Intro from "./screens/Intro";
-import Profile from "./screens/Profile";
-import FaceStep from "./screens/FaceStep";
-import VoiceStep from "./screens/VoiceStep";
-import Analyze from "./screens/Analyze";
-import Report from "./screens/Report";
+import React, { useState } from 'react';
+import { AppProvider, useApp } from '../context/AppContext';
+import { Header } from './layout/Header';
+import { Sidebar } from './layout/Sidebar';
+import { Toast } from './ui/Toast';
 
-const THEMES = ["aurora", "ember", "tide"];
+import { SplashScreen } from './screens/SplashScreen';
+import { WelcomeScreen } from './screens/WelcomeScreen';
+import { RegisterScreen } from './screens/RegisterScreen';
+import { LoginScreen } from './screens/LoginScreen';
+import { PrivacyConsentScreen } from './screens/PrivacyConsentScreen';
+import { SocialConnectScreen } from './screens/SocialConnectScreen';
+import { DashboardScreen } from './screens/DashboardScreen';
+import { AssessmentInterfaceScreen } from './screens/AssessmentInterfaceScreen';
+import { AssessmentCompletedScreen } from './screens/AssessmentCompletedScreen';
+import { ReportScreen } from './screens/ReportScreen';
+import { motion, AnimatePresence } from 'framer-motion';
 
-export default function Companion() {
-  const orbRef = useRef(null);
-  const ctx = useRef({ name: "", face: "", voice: "" }); // shared assessment data
+function AppContent() {
+  const { screen, theme, highContrast, largeFont } = useApp();
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
-  const [step, setStep] = useState("welcome");
-  const [caption, setCaption] = useState("Sage");
-  const [captionKey, setCaptionKey] = useState(0);
-  const [sub, setSub] = useState("");
-  const [toast, setToast] = useState("");
-  const [theme, setTheme] = useState("aurora");
-
-  // stable orb controller — animates via imperative handle, no re-renders
-  const orb = useMemo(
-    () => ({
-      mode: (m) => orbRef.current?.setMode(m),
-      energy: (v) => orbRef.current?.setEnergy(v),
-    }),
-    []
-  );
-
-  const showCaption = useCallback((text) => {
-    setCaption(text);
-    setCaptionKey((k) => k + 1); // remount span so the fade animation replays
-  }, []);
-  const showSub = useCallback((t) => setSub(t || ""), []);
-
-  const speak = useSpeech(orb, showCaption, showSub);
-
-  const showToast = useCallback((msg) => {
-    setToast(msg);
-    setTimeout(() => setToast(""), 2600);
-  }, []);
-
-  const go = useCallback((s) => setStep(s), []);
-
-  const setThemeAttr = (t) => {
-    setTheme(t);
-    document.documentElement.setAttribute("data-theme", t);
+  const renderScreen = () => {
+    switch (screen) {
+      case 'splash':
+        return <SplashScreen key="splash" />;
+      case 'welcome':
+        return <WelcomeScreen key="welcome" />;
+      case 'register':
+        return <RegisterScreen key="register" />;
+      case 'login':
+        return <LoginScreen key="login" />;
+      case 'consent':
+        return <PrivacyConsentScreen key="consent" />;
+      case 'social':
+        return <SocialConnectScreen key="social" />;
+      case 'dashboard':
+        return <DashboardScreen key="dashboard" />;
+      case 'assessment':
+        return <AssessmentInterfaceScreen key="assessment" />;
+      case 'completed':
+        return <AssessmentCompletedScreen key="completed" />;
+      case 'report':
+        return <ReportScreen key="report" />;
+      default:
+        return <SplashScreen key="splash" />;
+    }
   };
 
-  let screen = null;
-  switch (step) {
-    case "welcome":
-      screen = <Welcome orb={orb} showCaption={showCaption} showSub={showSub} onBegin={() => go("name")} />;
-      break;
-    case "name":
-      screen = <NameStep speak={speak} onDone={(n) => { ctx.current.name = n; go("intro"); }} />;
-      break;
-    case "intro":
-      screen = <Intro speak={speak} name={ctx.current.name} onDone={() => go("profile")} />;
-      break;
-    case "profile":
-      screen = <Profile speak={speak} onReady={() => go("face")} />;
-      break;
-    case "face":
-      screen = <FaceStep speak={speak} name={ctx.current.name} onDone={(e) => { ctx.current.face = e; go("voice"); }} />;
-      break;
-    case "voice":
-      screen = <VoiceStep speak={speak} orb={orb} onDone={(e) => { ctx.current.voice = e; go("analyze"); }} />;
-      break;
-    case "analyze":
-      screen = <Analyze orb={orb} showCaption={showCaption} showSub={showSub} onDone={() => go("report")} />;
-      break;
-    case "report":
-      screen = (
-        <Report
-          speak={speak}
-          showCaption={showCaption}
-          showSub={showSub}
-          name={ctx.current.name}
-          showToast={showToast}
-          onRestart={() => { ctx.current = { name: "", face: "", voice: "" }; go("welcome"); }}
-        />
-      );
-      break;
-    default:
-      screen = null;
-  }
+  const isFullStandalone = screen === 'splash' || screen === 'welcome';
 
   return (
-    <div className="app">
-      <header className="top">
-        <div className="brand">
-          <span className="dot" />
-          <b>MindSense</b> <span>Companion</span>
-        </div>
-        <div className="themes" role="group" aria-label="Orb theme">
-          {THEMES.map((t) => (
-            <button key={t} data-theme={t} aria-pressed={theme === t} onClick={() => setThemeAttr(t)}>
-              {t[0].toUpperCase() + t.slice(1)}
-            </button>
-          ))}
-        </div>
-      </header>
+    <div
+      className={`min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-teal-500 selection:text-slate-950 transition-all ${
+        highContrast ? 'high-contrast-mode' : ''
+      } ${largeFont ? 'text-lg' : ''}`}
+    >
+      <Header onOpenMobileSidebar={() => setMobileSidebarOpen(true)} />
 
-      <main className="stage">
-        <Orb ref={orbRef} />
-        <div className="caption">
-          <span className="fade" key={captionKey}>{caption}</span>
-        </div>
-        <div className="sub">{sub}</div>
-        {screen}
-        <StepDots step={step} />
-      </main>
+      <div className="flex w-full">
+        {/* Render Sidebar on screens after onboarding/welcome */}
+        {!isFullStandalone && (
+          <Sidebar
+            mobileOpen={mobileSidebarOpen}
+            onCloseMobile={() => setMobileSidebarOpen(false)}
+          />
+        )}
 
-      <Toast message={toast} />
+        <main className="flex-1 w-full min-w-0 overflow-x-hidden min-h-[calc(100vh-65px)]">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={screen}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
+              className="w-full"
+            >
+              {renderScreen()}
+            </motion.div>
+          </AnimatePresence>
+        </main>
+      </div>
+
+      <Toast />
     </div>
+  );
+}
+
+export default function Companion() {
+  return (
+    <AppProvider>
+      <AppContent />
+    </AppProvider>
   );
 }

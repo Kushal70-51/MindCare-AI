@@ -1,7 +1,7 @@
 "use client";
 
-const GROUPS = { welcome: 0, name: 0, intro: 1, profile: 1, face: 2, voice: 3, analyze: 4, report: 5 };
-const TOTAL = 6;
+const GROUPS = { welcome: 0, login: 0, social_consent: 1, name: 2, intro: 2, profile: 2, face: 3, voice: 4, analyze: 5, report: 6 };
+const TOTAL = 7;
 
 export default function StepDots({ step }) {
   const on = GROUPS[step] ?? 0;
