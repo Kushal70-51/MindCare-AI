@@ -13,9 +13,11 @@ import { LoginScreen } from './screens/LoginScreen';
 import { PrivacyConsentScreen } from './screens/PrivacyConsentScreen';
 import { SocialConnectScreen } from './screens/SocialConnectScreen';
 import { DashboardScreen } from './screens/DashboardScreen';
+import { ScreenerScreen } from './screens/ScreenerScreen';
 import { AssessmentInterfaceScreen } from './screens/AssessmentInterfaceScreen';
 import { AssessmentCompletedScreen } from './screens/AssessmentCompletedScreen';
 import { ReportScreen } from './screens/ReportScreen';
+import { CrisisResourceModal } from './ui/CrisisResourceModal';
 import { motion, AnimatePresence } from 'framer-motion';
 
 function AppContent() {
@@ -38,6 +40,8 @@ function AppContent() {
         return <SocialConnectScreen key="social" />;
       case 'dashboard':
         return <DashboardScreen key="dashboard" />;
+      case 'screener':
+        return <ScreenerScreen key="screener" />;
       case 'assessment':
         return <AssessmentInterfaceScreen key="assessment" />;
       case 'completed':
@@ -53,7 +57,7 @@ function AppContent() {
 
   return (
     <div
-      className={`min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-teal-500 selection:text-slate-950 transition-all ${
+      className={`min-h-screen bg-[#F4F7F6] text-slate-900 font-sans selection:bg-teal-200 selection:text-teal-900 transition-all ${
         highContrast ? 'high-contrast-mode' : ''
       } ${largeFont ? 'text-lg' : ''}`}
     >
@@ -85,6 +89,7 @@ function AppContent() {
       </div>
 
       <Toast />
+      <CrisisResourceModal />
     </div>
   );
 }

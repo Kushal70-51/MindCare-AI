@@ -42,25 +42,25 @@ export const RegisterScreen: React.FC = () => {
   };
 
   return (
-    <div className="w-full max-w-md mx-auto px-4 py-6 text-white">
+    <div className="w-full max-w-md mx-auto px-4 py-6 text-slate-900">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-slate-900/80 backdrop-blur-xl border border-white/15 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6"
+        className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-md space-y-6"
       >
         {/* Header */}
         <div className="text-center space-y-2">
-          <div className="inline-flex p-3 rounded-2xl bg-teal-500/20 text-teal-400 border border-teal-400/30 mb-1">
+          <div className="inline-flex p-3 rounded-2xl bg-teal-50 text-teal-600 border border-teal-200 mb-1">
             <User className="w-6 h-6" />
           </div>
-          <h2 className="text-2xl font-bold text-slate-100">Create Patient Account</h2>
-          <p className="text-xs text-slate-400">
+          <h2 className="text-2xl font-bold text-slate-900">Create Patient Account</h2>
+          <p className="text-xs text-slate-500">
             Join MindCare AI for secure, confidential mental health screening.
           </p>
         </div>
 
         {error && (
-          <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-300 text-xs font-medium text-center">
+          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium text-center">
             {error}
           </div>
         )}
@@ -70,7 +70,7 @@ export const RegisterScreen: React.FC = () => {
           <button
             type="button"
             onClick={() => handleOAuth('Google')}
-            className="flex items-center justify-center gap-2 p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-white/10 text-xs font-semibold transition-colors"
+            className="flex items-center justify-center gap-2 p-2.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-xs font-semibold transition-colors"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
               <path
@@ -96,7 +96,7 @@ export const RegisterScreen: React.FC = () => {
           <button
             type="button"
             onClick={() => handleOAuth('Microsoft')}
-            className="flex items-center justify-center gap-2 p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-white/10 text-xs font-semibold transition-colors"
+            className="flex items-center justify-center gap-2 p-2.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-xs font-semibold transition-colors"
           >
             <svg className="w-4 h-4" viewBox="0 0 23 23">
               <path fill="#f35325" d="M1 1h10v10H1z" />
@@ -110,9 +110,9 @@ export const RegisterScreen: React.FC = () => {
 
         <div className="relative flex items-center justify-center">
           <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-white/10" />
+            <div className="w-full border-t border-slate-200" />
           </div>
-          <span className="relative px-3 bg-slate-900 text-[10px] uppercase tracking-wider font-semibold text-slate-400">
+          <span className="relative px-3 bg-white text-[10px] uppercase tracking-wider font-semibold text-slate-500">
             Or register with email
           </span>
         </div>
@@ -120,86 +120,86 @@ export const RegisterScreen: React.FC = () => {
         {/* Registration Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
               Full Name
             </label>
             <div className="relative">
-              <User className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+              <User className="absolute left-3.5 top-3 w-4 h-4 text-slate-500" />
               <input
                 type="text"
                 required
                 placeholder="Alex Vance"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-950/70 border border-white/15 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-400"
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-teal-500"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
               Email Address
             </label>
             <div className="relative">
-              <Mail className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+              <Mail className="absolute left-3.5 top-3 w-4 h-4 text-slate-500" />
               <input
                 type="email"
                 required
                 placeholder="alex.vance@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-950/70 border border-white/15 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-400"
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-teal-500"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
               Phone Number
             </label>
             <div className="relative">
-              <Phone className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+              <Phone className="absolute left-3.5 top-3 w-4 h-4 text-slate-500" />
               <input
                 type="tel"
                 placeholder="+1 (555) 000-0000"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-950/70 border border-white/15 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-400"
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-teal-500"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
                 Password
               </label>
               <div className="relative">
-                <Lock className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+                <Lock className="absolute left-3.5 top-3 w-4 h-4 text-slate-500" />
                 <input
                   type="password"
                   required
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-950/70 border border-white/15 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-400"
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-teal-500"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
                 Confirm Password
               </label>
               <div className="relative">
-                <Lock className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+                <Lock className="absolute left-3.5 top-3 w-4 h-4 text-slate-500" />
                 <input
                   type="password"
                   required
                   placeholder="••••••••"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-950/70 border border-white/15 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-400"
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-teal-500"
                 />
               </div>
             </div>
@@ -211,11 +211,11 @@ export const RegisterScreen: React.FC = () => {
               type="checkbox"
               checked={acceptedPolicy}
               onChange={(e) => setAcceptedPolicy(e.target.checked)}
-              className="mt-0.5 w-4 h-4 rounded border-slate-700 bg-slate-950 text-teal-500 focus:ring-teal-400"
+              className="mt-0.5 w-4 h-4 rounded border-slate-300 bg-white text-teal-600 focus:ring-teal-400"
             />
-            <span className="text-xs text-slate-300 leading-snug">
+            <span className="text-xs text-slate-600 leading-snug">
               I accept the{' '}
-              <span className="text-teal-400 font-semibold hover:underline">
+              <span className="text-teal-600 font-semibold hover:underline">
                 Privacy Policy
               </span>{' '}
               and agree to HIPAA consent terms for AI assessment.
@@ -224,7 +224,7 @@ export const RegisterScreen: React.FC = () => {
 
           <button
             type="submit"
-            className="w-full flex items-center justify-center gap-2 py-3 px-6 rounded-xl bg-gradient-to-r from-blue-600 to-teal-500 hover:from-blue-500 hover:to-teal-400 text-white font-bold text-sm shadow-lg hover:shadow-teal-500/25 transition-all"
+            className="w-full flex items-center justify-center gap-2 py-3 px-6 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-sm shadow-sm hover:shadow-md transition-all"
           >
             <span>Create Account</span>
             <ArrowRight className="w-4 h-4" />
@@ -232,11 +232,11 @@ export const RegisterScreen: React.FC = () => {
         </form>
 
         {/* Link to Login */}
-        <div className="text-center pt-2 border-t border-white/10 text-xs text-slate-400">
+        <div className="text-center pt-2 border-t border-slate-200 text-xs text-slate-500">
           Already have an account?{' '}
           <button
             onClick={() => setScreen('login')}
-            className="font-bold text-teal-300 hover:underline"
+            className="font-bold text-teal-700 hover:underline"
           >
             Login
           </button>

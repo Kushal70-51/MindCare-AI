@@ -4,3 +4,8 @@ out
 .DS_Store
 *.log
 .env*
+*.sqlite
+*.sqlite3
+data/
+*.tsbuildinfo
+tsconfig.tsbuildinfo

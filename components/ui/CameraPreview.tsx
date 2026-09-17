@@ -3,15 +3,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Camera, CameraOff, Sparkles, Maximize2, Minimize2, ShieldCheck, Video } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useFaceEmotion, describeFaceEmotion, FaceEmotionReading } from '../../hooks/useFaceEmotion';
 
 interface CameraPreviewProps {
   cameraOn: boolean;
   onToggleCamera: () => void;
   backgroundBlur: boolean;
   onToggleBlur: () => void;
-  detectedEmotion?: string;
   isFullScreen?: boolean;
   onToggleFullScreen?: () => void;
+  onEmotionReading?: (reading: FaceEmotionReading) => void;
 }
 
 export const CameraPreview: React.FC<CameraPreviewProps> = ({
@@ -19,14 +20,30 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({
   onToggleCamera,
   backgroundBlur,
   onToggleBlur,
-  detectedEmotion = 'Calm & Focused',
   isFullScreen = false,
   onToggleFullScreen,
+  onEmotionReading,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [hasPermission, setHasPermission] = useState<boolean>(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
+
+  // Live facial-expression inference (pretrained face-api.js tiny_face_detector
+  // + face_expression CNNs) runs directly against the webcam feed when it's live.
+  const { reading, modelsReady, modelError } = useFaceEmotion(videoRef, cameraOn && hasPermission);
+
+  useEffect(() => {
+    if (reading && onEmotionReading) {
+      onEmotionReading(reading);
+    }
+  }, [reading, onEmotionReading]);
+
+  const affectLabel = hasPermission && cameraOn
+    ? modelError
+      ? 'Vision Model Unavailable'
+      : describeFaceEmotion(reading)
+    : 'AI Biometric Vision';
 
   useEffect(() => {
     let currentStream: MediaStream | null = null;
@@ -191,54 +208,49 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({
         </div>
       )}
 
-      {/* Top Bar Overlay Controls */}
-      <div className="absolute top-4 left-4 right-4 z-20 flex items-center justify-between pointer-events-auto">
-        <div className="flex items-center gap-2.5 bg-slate-950/85 backdrop-blur-xl px-4 py-2 rounded-2xl border border-white/15 shadow-xl">
-          <span className="relative flex h-3 w-3">
+      {/* Single Top Bar: live status + controls (kept minimal on purpose) */}
+      <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-auto">
+        <div className="flex items-center gap-2 bg-slate-950/80 backdrop-blur-xl pl-2.5 pr-3 py-1.5 rounded-full border border-white/10 shadow-lg">
+          <span className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
           </span>
-          <span className="text-xs font-bold text-white tracking-wide uppercase">
-            {cameraOn ? (hasPermission ? 'WebCam Live Stream' : 'AI Biometric Vision') : 'Camera Off'}
+          <span className="text-[11px] font-bold text-white tracking-wide uppercase">
+            {cameraOn ? (hasPermission ? 'Live' : 'AI Vision') : 'Camera Off'}
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {cameraOn && (
             <button
               onClick={onToggleBlur}
-              className={`px-3.5 py-2 rounded-2xl border text-xs font-bold flex items-center gap-1.5 backdrop-blur-xl transition-all ${
+              title={backgroundBlur ? 'Blur enabled' : 'Enable background blur'}
+              className={`p-2 rounded-full border backdrop-blur-xl transition-all ${
                 backgroundBlur
                   ? 'bg-teal-500 text-slate-950 border-teal-300 shadow-lg'
-                  : 'bg-slate-900/80 border-white/20 text-slate-200 hover:text-white'
+                  : 'bg-slate-950/80 border-white/10 text-slate-300 hover:text-white'
               }`}
             >
               <Sparkles className="w-4 h-4" />
-              <span>{backgroundBlur ? 'Blur ON' : 'Background Blur'}</span>
             </button>
           )}
 
           {onToggleFullScreen && (
             <button
               onClick={onToggleFullScreen}
-              className="p-2.5 rounded-2xl bg-slate-900/90 hover:bg-slate-800 border border-white/20 text-slate-200 hover:text-white shadow-xl backdrop-blur-xl transition-all"
+              className="p-2 rounded-full bg-slate-950/80 hover:bg-slate-800 border border-white/10 text-slate-300 hover:text-white shadow-lg backdrop-blur-xl transition-all"
               title={isFullScreen ? 'Exit Full Screen Video' : 'Full Screen Video'}
             >
-              {isFullScreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+              {isFullScreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
             </button>
           )}
         </div>
       </div>
 
-      {/* Bottom Bar Overlay Affect Indicator */}
-      <div className="absolute bottom-4 left-4 right-4 z-20 flex items-center justify-between bg-slate-950/85 backdrop-blur-xl px-4 py-2.5 rounded-2xl border border-white/15 pointer-events-auto">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="w-5 h-5 text-teal-400" />
-          <span className="text-xs font-semibold text-slate-200">Affective State:</span>
-        </div>
-        <span className="text-xs font-extrabold text-teal-300 px-3 py-1 rounded-xl bg-teal-950/80 border border-teal-400/40">
-          {detectedEmotion}
-        </span>
+      {/* Compact Affect Pill — small footprint, bottom-left, doesn't compete with the video */}
+      <div className="absolute bottom-3 left-3 z-20 flex items-center gap-1.5 bg-slate-950/80 backdrop-blur-xl pl-2 pr-3 py-1.5 rounded-full border border-white/10 shadow-lg pointer-events-auto">
+        <ShieldCheck className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+        <span className="text-[11px] font-bold text-teal-300 whitespace-nowrap">{affectLabel}</span>
       </div>
     </div>
   );

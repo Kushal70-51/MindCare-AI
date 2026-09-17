@@ -1,5 +1,4 @@
 import {
-  AssessmentQuestion,
   MentalHealthReport,
   SocialPlatform,
   UserProfile,
@@ -54,10 +53,10 @@ export const DEFAULT_SOCIAL_PLATFORMS: SocialPlatform[] = [
   {
     id: 'youtube',
     platform: 'YouTube',
-    handle: 'AlexVanceVlogs',
+    handle: '',
     connected: false,
     iconName: 'Youtube',
-    description: 'Content consumption & focus metrics',
+    description: 'Real public comment sentiment analysis',
     color: '#FF0000',
   },
   {
@@ -71,58 +70,30 @@ export const DEFAULT_SOCIAL_PLATFORMS: SocialPlatform[] = [
   },
 ];
 
-export const ASSESSMENT_QUESTIONS: AssessmentQuestion[] = [
-  {
-    id: 1,
-    category: 'Mood & Emotional State',
-    questionText:
-      'Over the past two weeks, how often have you felt down, depressed, or felt a loss of interest in activities you normally enjoy?',
-    aiVoicePrompt:
-      'Hello Alex. Welcome to MindCare AI. Thank you for participating. Let us start with your mood. Over the past two weeks, how often have you felt down or lost interest in activities you enjoy?',
-    sampleAnswerHint: 'e.g., "I have been feeling quite exhausted lately, and work has felt overwhelming..."',
-    domain: 'Mood & Emotion',
-  },
-  {
-    id: 2,
-    category: 'Stress & Anxiety Dynamics',
-    questionText:
-      'When facing unexpected deadlines or interpersonal pressure, do you experience muscle tension, racing thoughts, or restlessness?',
-    aiVoicePrompt:
-      'Thank you. When you encounter stress or sudden pressure, how does your body and mind respond?',
-    sampleAnswerHint: 'e.g., "My heart rate goes up and I tend to overthink before sleeping..."',
-    domain: 'Stress & Coping',
-  },
-  {
-    id: 3,
-    category: 'Sleep Architecture & Rest',
-    questionText:
-      'How would you rate your sleep quality recently? Do you struggle falling asleep, waking up early, or feeling unrested?',
-    aiVoicePrompt:
-      'Understood. Now let us discuss your sleep quality. Do you wake up feeling refreshed, or do you struggle staying asleep?',
-    sampleAnswerHint: 'e.g., "It takes me almost an hour to sleep because of screen time and stress..."',
-    domain: 'Cognitive & Sleep',
-  },
-  {
-    id: 4,
-    category: 'Social Support & Isolation',
-    questionText:
-      'Do you feel connected to friends, family, or your support network, or have you been feeling isolated or misunderstood?',
-    aiVoicePrompt:
-      'Thank you for sharing that. How supported do you feel by those around you right now?',
-    sampleAnswerHint: 'e.g., "I have good friends, but I tend to isolate myself when I feel overwhelmed..."',
-    domain: 'Social Engagement',
-  },
-  {
-    id: 5,
-    category: 'Coping Mechanisms & Resilience',
-    questionText:
-      'What strategies or habits do you rely on when feeling overwhelmed, and how effective do they feel to you?',
-    aiVoicePrompt:
-      'Lastly, what activities or habits help you recharge when things get difficult?',
-    sampleAnswerHint: 'e.g., "I go for evening walks and practice deep breathing, which helps moderate my anxiety..."',
-    domain: 'Overall Well-being',
-  },
-];
+// Target question count for the adaptive AI interview (shown as progress
+// estimate in the UI) — the model has discretion to land on 5 or 6.
+export const TARGET_INTERVIEW_QUESTIONS = 6;
+
+// Hardcoded first turn of the adaptive interview — asked instantly with no
+// API latency, and guarantees age is always established before the
+// AI-generated, age-aware follow-up questions begin (see app/api/interview).
+export function buildInterviewOpener(name?: string, lang?: string): string {
+  const firstName = name?.trim().split(' ')[0];
+  const l = String(lang || '').toLowerCase();
+  if (l.startsWith('hi') || l.includes('hindi')) {
+    return firstName
+      ? `नमस्ते ${firstName}, यहाँ आने के लिए शुक्रिया। बातचीत शुरू करने से पहले, क्या आप मुझे अपनी उम्र बता सकते हैं?`
+      : `नमस्ते, यहाँ आने के लिए शुक्रिया। बातचीत शुरू करने से पहले, क्या आप मुझे अपनी उम्र बता सकते हैं?`;
+  }
+  if (l.startsWith('mr') || l.includes('marathi')) {
+    return firstName
+      ? `नमस्कार ${firstName}, इथे आल्याबद्दल धन्यवाद. संवाद सुरू करण्यापूर्वी, आपण आपले वय सांगू शकाल का?`
+      : `नमस्कार, इथे आल्याबद्दल धन्यवाद. संवाद सुरू करण्यापूर्वी, आपण आपले वय सांगू शकाल का?`;
+  }
+  return firstName
+    ? `Hi ${firstName}, thanks for being here. Before we get started, could you tell me your age?`
+    : `Hi there, thanks for being here. Before we get started, could you tell me your age?`;
+}
 
 export const INITIAL_REPORT: MentalHealthReport = {
   overallScore: 78,

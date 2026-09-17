@@ -4,12 +4,8 @@ import React from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Brain,
-  Sparkles,
-  Sun,
-  Moon,
   Eye,
   Type,
-  User,
   Activity,
   Menu,
 } from 'lucide-react';
@@ -59,13 +55,13 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileSidebar }) => {
   };
 
   return (
-    <header className="w-full bg-slate-900/80 backdrop-blur-xl border-b border-white/10 px-4 sm:px-6 py-3.5 flex items-center justify-between sticky top-0 z-30 transition-all">
+    <header className="w-full bg-white/90 backdrop-blur-md border-b border-slate-200 px-4 sm:px-6 py-3.5 flex items-center justify-between sticky top-0 z-30 transition-all">
       {/* Brand & Mobile Drawer Toggle */}
       <div className="flex items-center gap-3">
         {onOpenMobileSidebar && (
           <button
             onClick={onOpenMobileSidebar}
-            className="md:hidden p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white border border-white/10"
+            className="md:hidden p-2 rounded-xl bg-slate-100 text-slate-600 hover:text-slate-900 border border-slate-200"
             aria-label="Open Navigation Menu"
           >
             <Menu className="w-5 h-5" />
@@ -76,26 +72,26 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileSidebar }) => {
           onClick={() => setScreen('welcome')}
           className="flex items-center gap-2.5 cursor-pointer group"
         >
-          <div className="relative p-2 rounded-2xl bg-gradient-to-tr from-blue-600 via-teal-500 to-emerald-400 text-white shadow-[0_0_20px_rgba(20,184,166,0.4)] group-hover:scale-105 transition-transform">
-            <Brain className="w-6 h-6 animate-pulse" />
+          <div className="relative p-2 rounded-2xl bg-teal-600 text-white shadow-sm group-hover:scale-105 transition-transform">
+            <Brain className="w-6 h-6" />
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <span className="font-extrabold text-base sm:text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-teal-200 bg-clip-text text-transparent">
+              <span className="font-extrabold text-base sm:text-lg tracking-tight text-slate-900">
                 MindCare AI
               </span>
-              <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#22c55e]" />
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
             </div>
-            <p className="text-[10px] uppercase font-semibold tracking-widest text-teal-400/90 hidden sm:block">
+            <p className="text-[10px] uppercase font-semibold tracking-widest text-teal-700 hidden sm:block">
               Clinical SaaS Assessment
             </p>
           </div>
         </div>
 
         {/* Current Active Section Badge */}
-        <div className="hidden lg:flex items-center gap-2 ml-4 pl-4 border-l border-white/10">
-          <Activity className="w-4 h-4 text-teal-400" />
-          <span className="text-xs font-semibold text-slate-300">
+        <div className="hidden lg:flex items-center gap-2 ml-4 pl-4 border-l border-slate-200">
+          <Activity className="w-4 h-4 text-teal-600" />
+          <span className="text-xs font-semibold text-slate-500">
             {getScreenTitle()}
           </span>
         </div>
@@ -109,8 +105,8 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileSidebar }) => {
           title={highContrast ? 'Standard Contrast' : 'High Contrast Mode'}
           className={`p-2 rounded-xl border text-xs font-medium flex items-center gap-1 transition-colors ${
             highContrast
-              ? 'bg-amber-500 text-slate-950 font-bold border-amber-300'
-              : 'bg-slate-800/80 border-white/10 text-slate-300 hover:text-white'
+              ? 'bg-amber-500 text-slate-950 font-bold border-amber-400'
+              : 'bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-900'
           }`}
         >
           <Eye className="w-4 h-4" />
@@ -125,8 +121,8 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileSidebar }) => {
           title={largeFont ? 'Standard Font Size' : 'Large Text Accessibility'}
           className={`p-2 rounded-xl border text-xs font-medium flex items-center gap-1 transition-colors ${
             largeFont
-              ? 'bg-teal-500 text-white font-bold border-teal-300'
-              : 'bg-slate-800/80 border-white/10 text-slate-300 hover:text-white'
+              ? 'bg-teal-600 text-white font-bold border-teal-600'
+              : 'bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-900'
           }`}
         >
           <Type className="w-4 h-4" />
@@ -136,13 +132,13 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileSidebar }) => {
         </button>
 
         {/* Theme Picker */}
-        <div className="hidden sm:flex items-center p-1 rounded-xl bg-slate-950/60 border border-white/10 gap-1">
+        <div className="hidden sm:flex items-center p-1 rounded-xl bg-slate-100 border border-slate-200 gap-1">
           <button
             onClick={() => setTheme('calm')}
             className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
               theme === 'calm'
-                ? 'bg-teal-500 text-slate-950 font-bold shadow'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-white text-teal-700 font-bold shadow-sm'
+                : 'text-slate-500 hover:text-slate-800'
             }`}
           >
             Calm
@@ -151,8 +147,8 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileSidebar }) => {
             onClick={() => setTheme('light')}
             className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
               theme === 'light'
-                ? 'bg-blue-600 text-white font-bold shadow'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-white text-blue-700 font-bold shadow-sm'
+                : 'text-slate-500 hover:text-slate-800'
             }`}
           >
             Light
@@ -161,8 +157,8 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileSidebar }) => {
             onClick={() => setTheme('dark')}
             className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
               theme === 'dark'
-                ? 'bg-indigo-600 text-white font-bold shadow'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-white text-indigo-700 font-bold shadow-sm'
+                : 'text-slate-500 hover:text-slate-800'
             }`}
           >
             Dark
@@ -173,27 +169,27 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileSidebar }) => {
         {user.isLoggedIn ? (
           <div
             onClick={() => setScreen('dashboard')}
-            className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-full bg-slate-800/90 hover:bg-slate-800 border border-white/15 cursor-pointer transition-all"
+            className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-full bg-slate-50 hover:bg-slate-100 border border-slate-200 cursor-pointer transition-all"
           >
             {user.avatarUrl ? (
               <img
                 src={user.avatarUrl}
                 alt={user.fullName}
-                className="w-7 h-7 rounded-full object-cover border border-teal-400"
+                className="w-7 h-7 rounded-full object-cover border border-teal-500"
               />
             ) : (
-              <div className="w-7 h-7 rounded-full bg-teal-500 text-slate-950 flex items-center justify-center font-bold text-xs">
+              <div className="w-7 h-7 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold text-xs">
                 {user.fullName[0]}
               </div>
             )}
-            <span className="text-xs font-semibold text-slate-200 hidden md:inline">
+            <span className="text-xs font-semibold text-slate-700 hidden md:inline">
               {user.fullName.split(' ')[0]}
             </span>
           </div>
         ) : (
           <button
             onClick={() => setScreen('login')}
-            className="px-4 py-1.5 rounded-full bg-gradient-to-r from-blue-600 to-teal-500 text-white font-semibold text-xs hover:shadow-lg hover:shadow-teal-500/20 transition-all"
+            className="px-4 py-1.5 rounded-full bg-teal-600 hover:bg-teal-700 text-white font-semibold text-xs transition-all"
           >
             Sign In
           </button>

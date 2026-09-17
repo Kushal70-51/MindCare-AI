@@ -39,16 +39,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) =
   };
 
   const sidebarContent = (
-    <div className="h-full flex flex-col justify-between p-4 bg-slate-900/90 backdrop-blur-2xl border-r border-white/10 text-white w-64 shadow-2xl">
+    <div className="h-full flex flex-col justify-between p-4 bg-white border-r border-slate-200 text-slate-900 w-64 shadow-sm">
       {/* Navigation Links */}
       <div className="space-y-6">
         {/* Healthcare Platform Card */}
-        <div className="p-3.5 rounded-2xl bg-gradient-to-br from-blue-900/40 via-teal-900/30 to-slate-900 border border-teal-500/30 shadow-lg">
-          <div className="flex items-center gap-2 text-teal-300 font-bold text-xs">
-            <Sparkles className="w-4 h-4 text-teal-400" />
+        <div className="p-3.5 rounded-2xl bg-teal-50 border border-teal-100">
+          <div className="flex items-center gap-2 text-teal-700 font-bold text-xs">
+            <Sparkles className="w-4 h-4 text-teal-600" />
             <span>AI Clinical Assistant</span>
           </div>
-          <p className="text-[11px] text-slate-300 mt-1">
+          <p className="text-[11px] text-slate-500 mt-1">
             Evidence-Based Multimodal Assessment Framework
           </p>
         </div>
@@ -69,15 +69,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) =
                   onClick={() => handleNavigate(item.id)}
                   className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                     isActive
-                      ? 'bg-gradient-to-r from-blue-600 to-teal-500 text-white shadow-lg shadow-teal-500/20'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60'
+                      ? 'bg-teal-600 text-white shadow-sm'
+                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
                   }`}
                 >
                   <div className="flex items-center gap-3">
                     <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
                     <span>{item.label}</span>
                   </div>
-                  {isActive && <ChevronRight className="w-4 h-4 text-teal-200" />}
+                  {isActive && <ChevronRight className="w-4 h-4 text-white/80" />}
                 </button>
               );
             })}
@@ -86,14 +86,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) =
       </div>
 
       {/* Footer / Account Settings & Logout */}
-      <div className="space-y-3 pt-4 border-t border-white/10">
-        <div className="px-3 py-2 rounded-xl bg-slate-950/60 border border-white/5 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-teal-500/20 border border-teal-400/40 text-teal-300 font-bold text-xs flex items-center justify-center">
+      <div className="space-y-3 pt-4 border-t border-slate-200">
+        <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-teal-100 border border-teal-200 text-teal-700 font-bold text-xs flex items-center justify-center">
             {user.fullName[0]}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-bold text-slate-200 truncate">{user.fullName}</p>
-            <p className="text-[10px] text-slate-400 truncate">{user.email}</p>
+            <p className="text-xs font-bold text-slate-800 truncate">{user.fullName}</p>
+            <p className="text-[10px] text-slate-500 truncate">{user.email}</p>
           </div>
         </div>
 
@@ -102,7 +102,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) =
             logoutUser();
             if (onCloseMobile) onCloseMobile();
           }}
-          className="w-full flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium text-rose-400 hover:bg-rose-950/40 hover:text-rose-300 transition-colors"
+          className="w-full flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium text-rose-600 hover:bg-rose-50 transition-colors"
         >
           <LogOut className="w-4 h-4" />
           <span>Sign Out</span>

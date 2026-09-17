@@ -2,32 +2,95 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useVoiceEmotion } from '../../hooks/useVoiceEmotion';
 import { AiVoiceOrb } from '../ui/AiVoiceOrb';
 import { CameraPreview } from '../ui/CameraPreview';
 import { AudioVisualizer } from '../ui/AudioVisualizer';
+import { TARGET_INTERVIEW_QUESTIONS, buildInterviewOpener } from '../../utils/mockData';
 import {
   Mic,
   MicOff,
   Video,
   VideoOff,
   PhoneOff,
-  Settings,
-  Maximize2,
   Volume2,
   Send,
-  ChevronLeft,
-  ChevronRight,
-  MessageSquare,
+  RotateCcw,
+  Globe,
+  Clock,
   Sparkles,
+  FastForward,
+  Smile,
+  Bot,
+  User,
+  Check,
 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+
+export interface LanguageOption {
+  code: string;
+  name: string;
+  nativeLabel: string;
+  flag: string;
+  hint: string;
+  placeholder: string;
+  quickChips: string[];
+}
+
+export const SUPPORTED_LANGUAGES: LanguageOption[] = [
+  {
+    code: 'en-IN',
+    name: 'English',
+    nativeLabel: 'English',
+    flag: '🇬🇧',
+    hint: 'Interviewer speaks and listens in English',
+    placeholder: 'Speak or type your response in English (e.g. I feel stressed with work)...',
+    quickChips: [
+      'I am 22 years old',
+      'Feeling constantly stressed and anxious',
+      'Having trouble sleeping and feeling exhausted',
+      'Everything is going reasonably well',
+    ],
+  },
+  {
+    code: 'hi-IN',
+    name: 'हिन्दी (Hindi)',
+    nativeLabel: 'हिन्दी',
+    flag: '🇮🇳',
+    hint: 'इन्टरव्यूअर शुद्ध व सरल हिन्दी में बोलेगा और सुनेगा',
+    placeholder: 'यहाँ बोलें या लिखें... (जैसे: मेरी उम्र 22 वर्ष है, या Hinglish में)',
+    quickChips: [
+      'मेरी उम्र 21 साल है',
+      'मुझे बहुत तनाव और चिंता महसूस होती है',
+      'रात को नींद नहीं आती, दिनभर थकान रहती है',
+      'सब कुछ ठीक चल रहा है',
+    ],
+  },
+  {
+    code: 'mr-IN',
+    name: 'मराठी (Marathi)',
+    nativeLabel: 'मराठी',
+    flag: '🇮🇳',
+    hint: 'मुलाखतकार अस्खलित मराठीत बोलेल आणि ऐकेल',
+    placeholder: 'येथे बोला किंवा लिहा... (उदा. माझे वय 23 वर्षे आहे, किंवा Marathinglish मध्ये)',
+    quickChips: [
+      'माझे वय 22 वर्षे आहे',
+      'मला कामाचा खूप ताण येत आहे',
+      'रात्री शांत झोप लागत नाही, थकवा जाणवतो',
+      'सगळं काही ठीक चाललं आहे',
+    ],
+  },
+];
 
 export const AssessmentInterfaceScreen: React.FC = () => {
   const {
+    user,
     setScreen,
-    questions,
-    currentQuestionIndex,
-    goToQuestion,
+    currentAiQuestion,
+    setCurrentAiQuestion,
+    interviewTurnNumber,
+    interviewComplete,
+    startInterview,
     recordAnswer,
     cameraOn,
     toggleCamera,
@@ -36,90 +99,518 @@ export const AssessmentInterfaceScreen: React.FC = () => {
     backgroundBlur,
     toggleBackgroundBlur,
     showToast,
-  } = useApp();
+    recordFaceEmotion,
+    currentFaceEmotion,
+    recordVoiceEmotion,
+  } = useApp() as any;
 
-  const currentQ = questions[currentQuestionIndex];
   const [userInput, setUserInput] = useState('');
+  const [interimDisplay, setInterimDisplay] = useState('');
   const [aiMode, setAiMode] = useState<'speaking' | 'listening' | 'thinking'>('speaking');
-  const [transcript, setTranscript] = useState<Array<{ sender: 'ai' | 'user'; text: string; time: string }>>([]);
+  const [transcript, setTranscript] = useState<Array<{ sender: 'ai' | 'user'; text: string; time: string; moodTag?: string }>>([]);
   const [isListening, setIsListening] = useState(false);
   const [isFullScreenVideo, setIsFullScreenVideo] = useState(false);
-  const recognitionRef = useRef<any>(null);
 
-  // Web Speech Synthesis
+  // Multilingual & Accent Settings
+  const [selectedLang, setSelectedLang] = useState<string>('en-IN');
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [autoSubmit, setAutoSubmit] = useState<boolean>(true);
+  const [countdown, setCountdown] = useState<number | null>(null);
+
+  const isManuallyEditedRef = useRef<boolean>(false);
+  const sessionPrefixRef = useRef<string>('');
+  const userInputRef = useRef<string>('');
+  const recognitionRef = useRef<any>(null);
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countdownValRef = useRef<number>(0);
+  const hasSubmittedRef = useRef<boolean>(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const isSpeakingRef = useRef<boolean>(false);
+  const lastSpokenTextRef = useRef<string>('');
+
+  // Synchronized state & ref updater to prevent any stale React closures in timers
+  const setInputValue = (val: string) => {
+    userInputRef.current = val;
+    setUserInput(val);
+  };
+
+  // Auto-scroll chat smoothly whenever transcript changes or typing begins
   useEffect(() => {
-    if (!currentQ) return;
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [transcript, aiMode, interimDisplay]);
+
+  // Reliable helper to ensure speech synthesis voices are populated in Chromium/Edge
+  const ensureVoicesReady = (): Promise<SpeechSynthesisVoice[]> => {
+    return new Promise((resolve) => {
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+        resolve([]);
+        return;
+      }
+      const existing = window.speechSynthesis.getVoices();
+      if (existing && existing.length > 0) {
+        resolve(existing);
+        return;
+      }
+      let resolved = false;
+      const onVoicesChanged = () => {
+        if (resolved) return;
+        resolved = true;
+        window.speechSynthesis.onvoiceschanged = null;
+        resolve(window.speechSynthesis.getVoices() || []);
+      };
+      window.speechSynthesis.onvoiceschanged = onVoicesChanged;
+      setTimeout(() => {
+        if (resolved) return;
+        resolved = true;
+        window.speechSynthesis.onvoiceschanged = null;
+        resolve(window.speechSynthesis.getVoices() || []);
+      }, 1200);
+    });
+  };
+
+  // Load and cache browser speech synthesis voices reliably on mount
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+    ensureVoicesReady().then((vs) => {
+      if (vs && vs.length > 0) {
+        setAvailableVoices(vs);
+      }
+    });
+
+    const onVoices = () => {
+      const vs = window.speechSynthesis.getVoices();
+      if (vs && vs.length > 0) {
+        setAvailableVoices(vs);
+      }
+    };
+    window.speechSynthesis.onvoiceschanged = onVoices;
+  }, []);
+
+  // Records audio samples per question for wav2vec2 acoustic tone classification
+  useVoiceEmotion(aiMode === 'listening' && !micMuted, interviewTurnNumber, recordVoiceEmotion);
+
+  // Start interview with selected language opener on mount
+  useEffect(() => {
+    startInterview(selectedLang);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Helper to find the best matching browser TTS voice and its effective language tag
+  const getBestVoice = (
+    langCode: string,
+    voiceList?: SpeechSynthesisVoice[]
+  ): { voice: SpeechSynthesisVoice | null; actualLang: string } => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      return { voice: null, actualLang: langCode };
+    }
+    const voices =
+      voiceList && voiceList.length > 0
+        ? voiceList
+        : availableVoices.length > 0
+        ? availableVoices
+        : window.speechSynthesis.getVoices();
+
+    if (!voices || voices.length === 0) return { voice: null, actualLang: langCode };
+
+    const norm = langCode.toLowerCase();
+
+    // 1. Hindi (hi-IN)
+    if (norm.startsWith('hi')) {
+      const hiVoice = voices.find(
+        (v) =>
+          v.lang.toLowerCase().startsWith('hi') ||
+          /hindi|हिन्दी|kalpana|hemant|swara|madhur|ananya/i.test(v.name)
+      );
+      if (hiVoice) {
+        return { voice: hiVoice, actualLang: hiVoice.lang || 'hi-IN' };
+      }
+    }
+
+    // 2. Marathi (mr-IN)
+    if (norm.startsWith('mr')) {
+      const mrVoice = voices.find(
+        (v) =>
+          v.lang.toLowerCase().startsWith('mr') ||
+          /marathi|मराठी|aarohi/i.test(v.name)
+      );
+      if (mrVoice) {
+        return { voice: mrVoice, actualLang: mrVoice.lang || 'mr-IN' };
+      }
+
+      // Marathi fallback to Hindi Devanagari voice if Marathi voice isn't installed in OS
+      const hiFallback = voices.find(
+        (v) =>
+          v.lang.toLowerCase().startsWith('hi') ||
+          /hindi|हिन्दी|kalpana|hemant|swara|madhur/i.test(v.name)
+      );
+      if (hiFallback) {
+        console.warn(
+          '[MindCare TTS] Native Marathi voice not found in OS. Falling back to Hindi Devanagari voice for accurate pronunciation:',
+          hiFallback.name
+        );
+        return { voice: hiFallback, actualLang: hiFallback.lang || 'hi-IN' };
+      }
+    }
+
+    // 3. Indian English (en-IN)
+    const enInVoice = voices.find(
+      (v) =>
+        v.lang.toLowerCase() === 'en-in' ||
+        /india|neerja|ravi|prabhat/i.test(v.name)
+    );
+    if (enInVoice) return { voice: enInVoice, actualLang: enInVoice.lang || 'en-IN' };
+
+    // 4. Natural English (US/GB)
+    const enNatural = voices.find(
+      (v) =>
+        /samantha|aria|jenny|natural|google uk english female/i.test(v.name) ||
+        /female|zira/i.test(v.name) ||
+        /en-US|en-GB/i.test(v.lang)
+    );
+    if (enNatural) return { voice: enNatural, actualLang: enNatural.lang || 'en-US' };
+
+    // 5. Fallback: closest available voice
+    return { voice: voices[0] || null, actualLang: voices[0]?.lang || langCode };
+  };
+
+  // Speaks any arbitrary text in the selected language using Web Speech API with voice-ready wait
+  const speakText = async (text: string, langCode: string, onEndCallback?: () => void) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window) || !text) {
+      if (onEndCallback) setTimeout(onEndCallback, 1200);
+      return;
+    }
+
+    // Ensure voices are loaded before dispatching utterance
+    let voices = availableVoices;
+    if (!voices || voices.length === 0) {
+      voices = await ensureVoicesReady();
+      if (voices && voices.length > 0) {
+        setAvailableVoices(voices);
+      }
+    }
+
+    try {
+      window.speechSynthesis.cancel();
+    } catch (e) {}
 
     setAiMode('speaking');
+    isSpeakingRef.current = true;
+    lastSpokenTextRef.current = text;
 
-    setTranscript((prev) => [
-      ...prev,
-      {
-        sender: 'ai',
-        text: currentQ.aiVoicePrompt,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      },
-    ]);
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.94;
+    utterance.pitch = 1.0;
 
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(currentQ.aiVoicePrompt);
-      utterance.rate = 0.95;
-      utterance.onend = () => setAiMode('listening');
-      window.speechSynthesis.speak(utterance);
-    } else {
-      const timer = setTimeout(() => setAiMode('listening'), 3000);
-      return () => clearTimeout(timer);
+    const { voice: matchedVoice, actualLang } = getBestVoice(langCode, voices);
+    if (matchedVoice) {
+      utterance.voice = matchedVoice;
     }
+    // Setting utterance.lang to match the actual voice avoids Chromium dropping audio on mismatch
+    utterance.lang = actualLang;
+
+    console.log('[MindCare TTS] Speaking utterance:', {
+      text: text.slice(0, 45) + (text.length > 45 ? '...' : ''),
+      targetLang: langCode,
+      actualLang,
+      voiceName: matchedVoice?.name || 'System Default',
+    });
+
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      isSpeakingRef.current = false;
+      if (onEndCallback) onEndCallback();
+    };
+
+    utterance.onend = finish;
+    utterance.onerror = (e) => {
+      console.warn('[MindCare TTS] Utterance error:', e);
+      finish();
+    };
+
+    // Safety net in case speech engine stalls
+    const safetyMs = Math.max(2500, text.length * 80 + 3500);
+    setTimeout(() => {
+      if (!finished && isSpeakingRef.current) {
+        console.warn('[MindCare TTS] Utterance safety timeout reached');
+        finish();
+      }
+    }, safetyMs);
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  // Handle language change by user — switches voice, greeting, and STT immediately without race conditions
+  const handleLanguageChange = (newLangCode: string) => {
+    if (newLangCode === selectedLang) return;
+
+    cancelCountdown();
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch (e) {}
+    }
+
+    setSelectedLang(newLangCode);
+
+    showToast(
+      newLangCode.startsWith('hi')
+        ? 'हिन्दी भाषा चुनी गई — इन्टरव्यूअर अब हिन्दी में बात करेगा'
+        : newLangCode.startsWith('mr')
+        ? 'मराठी भाषा निवडली — मुलाखतकार आता मराठीत संवाद साधेल'
+        : 'Language switched to English — interviewer will speak in English'
+    );
+
+    // If still on Turn 1, translate opener and speak immediately
+    if (interviewTurnNumber <= 1) {
+      const localizedOpener = buildInterviewOpener(user?.fullName, newLangCode);
+      if (typeof setCurrentAiQuestion === 'function') {
+        setCurrentAiQuestion(localizedOpener);
+      }
+      setTranscript([
+        {
+          sender: 'ai',
+          text: localizedOpener,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ]);
+      // Speak greeting immediately and record in ref so useEffect doesn't duplicate it
+      speakText(localizedOpener, newLangCode, () => {
+        setTimeout(() => setAiMode('listening'), 400);
+      });
+    } else {
+      // If turn > 1, speak confirmation line in chosen language and continue
+      const confirmationMsg = newLangCode.startsWith('hi')
+        ? 'हिन्दी भाषा सक्रिय की गई है। कृपया अपनी बात जारी रखें।'
+        : newLangCode.startsWith('mr')
+        ? 'मराठी भाषा सुरू केली आहे. कृपया पुढे बोला.'
+        : 'Switched to English. Please continue.';
+
+      speakText(confirmationMsg, newLangCode, () => {
+        setTimeout(() => setAiMode('listening'), 400);
+      });
+    }
+  };
+
+  const cancelCountdown = () => {
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    setCountdown(null);
+  };
+
+  const startCountdown = (seconds: number = 3) => {
+    cancelCountdown();
+    countdownValRef.current = seconds;
+    setCountdown(seconds);
+
+    countdownTimerRef.current = setInterval(() => {
+      countdownValRef.current -= 1;
+      if (countdownValRef.current <= 0) {
+        cancelCountdown();
+        const textToSubmit = (userInputRef.current || userInput).trim();
+        console.log('[MindCare Auto-Send] Countdown expired, submitting:', textToSubmit);
+        if (textToSubmit && !hasSubmittedRef.current) {
+          handleSendAnswer(textToSubmit);
+        }
+      } else {
+        setCountdown(countdownValRef.current);
+      }
+    }, 1000);
+  };
+
+  // Web Speech Synthesis — fires when a new AI question arrives
+  useEffect(() => {
+    if (!currentAiQuestion) return;
+
+    // Avoid duplicate speak if handleLanguageChange already dispatched this exact text
+    if (lastSpokenTextRef.current === currentAiQuestion && aiMode === 'speaking') {
+      return;
+    }
+
+    cancelCountdown();
+    hasSubmittedRef.current = false;
+    sessionPrefixRef.current = '';
+    userInputRef.current = '';
+    isManuallyEditedRef.current = false;
+    setUserInput('');
+    setInterimDisplay('');
+
+    // Avoid duplicate assistant entries in transcript
+    setTranscript((prev) => {
+      const lastMsg = prev[prev.length - 1];
+      if (lastMsg && lastMsg.sender === 'ai' && lastMsg.text === currentAiQuestion) {
+        return prev;
+      }
+      return [
+        ...prev,
+        {
+          sender: 'ai',
+          text: currentAiQuestion,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ];
+    });
+
+    const finishSpeaking = () => {
+      if (interviewComplete) {
+        showToast('Assessment Completed!');
+        setScreen('completed');
+      } else {
+        setTimeout(() => {
+          setAiMode('listening');
+        }, 400);
+      }
+    };
+
+    speakText(currentAiQuestion, selectedLang, finishSpeaking);
 
     return () => {
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-    };
-  }, [currentQuestionIndex]);
-
-  // Continuous Speech-to-Text (STT) Auto-Typing Engine
-  useEffect(() => {
-    if (micMuted) {
-      if (recognitionRef.current) {
         try {
-          recognitionRef.current.stop();
+          window.speechSynthesis.cancel();
         } catch (e) {}
       }
+    };
+  }, [currentAiQuestion, selectedLang]);
+
+  const handleReplayQuestion = (customText?: string) => {
+    const textToPlay = customText || currentAiQuestion;
+    if (!textToPlay) return;
+    cancelCountdown();
+    speakText(textToPlay, selectedLang, () => {
+      setTimeout(() => setAiMode('listening'), 400);
+    });
+  };
+
+  const handleSkipAiSpeech = () => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch (e) {}
+    }
+    setAiMode('listening');
+  };
+
+  // Continuous Speech-to-Text (STT) Engine with Active Language Support & Error Auto-Recovery
+  useEffect(() => {
+    if (micMuted || aiMode !== 'listening') {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch (e) {}
+        recognitionRef.current = null;
+      }
       setIsListening(false);
+      cancelCountdown();
       return;
     }
 
     if (typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+      // Cleanly abort previous recognizer before instantiating new one
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch (e) {}
+        recognitionRef.current = null;
+      }
+
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.lang = 'en-US';
+      recognition.lang = selectedLang;
+
+      let isStopping = false;
+      recognitionRef.current = recognition;
+
+      console.log('[MindCare STT] Recognizer started for language:', selectedLang);
 
       recognition.onstart = () => {
         setIsListening(true);
       };
 
       recognition.onresult = (event: any) => {
-        let liveTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          liveTranscript += event.results[i][0].transcript;
+        let sessionFinal = '';
+        let sessionInterim = '';
+
+        for (let i = 0; i < event.results.length; i++) {
+          const segment = event.results[i][0].transcript || '';
+          if (event.results[i].isFinal) {
+            sessionFinal += segment + ' ';
+          } else {
+            sessionInterim += segment;
+          }
         }
-        if (liveTranscript) {
-          // Auto-type what the user talks directly into the input answer field!
-          setUserInput(liveTranscript);
+
+        sessionFinal = sessionFinal.trim();
+        sessionInterim = sessionInterim.trim();
+
+        // Single clean computation of words spoken in the current recognition session
+        const currentSpoken = (sessionFinal + (sessionFinal && sessionInterim ? ' ' : '') + sessionInterim).trim();
+        const prefix = sessionPrefixRef.current.trim();
+        const fullDisplay = prefix ? (currentSpoken ? `${prefix} ${currentSpoken}` : prefix) : currentSpoken;
+
+        if (fullDisplay) {
+          setInputValue(fullDisplay);
+          setInterimDisplay(sessionInterim);
+        }
+
+        // Voice activity detected: cancel any active countdown while user is speaking
+        cancelCountdown();
+
+        // Trigger auto-send countdown after 2.4 seconds of calm pause
+        if (autoSubmit && fullDisplay.trim().length >= 1) {
+          silenceTimerRef.current = setTimeout(() => {
+            const currentVal = (userInputRef.current || fullDisplay).trim();
+            if (currentVal && !hasSubmittedRef.current && aiMode === 'listening') {
+              console.log('[MindCare Auto-Send] 2.4s pause detected, starting countdown for:', currentVal);
+              startCountdown(3);
+            }
+          }, 2400);
         }
       };
 
       recognition.onerror = (err: any) => {
-        console.warn('STT Error:', err);
+        const errType = err?.error;
+        if (errType === 'no-speech') {
+          // Ambient pause — normal
+          return;
+        }
+        if (errType === 'aborted') {
+          return;
+        }
+        console.warn('[MindCare STT] Recognition error:', errType);
+        if (errType === 'network' && !isStopping && !micMuted && aiMode === 'listening') {
+          setTimeout(() => {
+            if (!isStopping && !micMuted && aiMode === 'listening') {
+              try {
+                recognition.start();
+              } catch (e) {}
+            }
+          }, 400);
+        }
       };
 
       recognition.onend = () => {
-        // Auto-restart if mic is still unmuted
-        if (!micMuted) {
+        const textNow = (userInputRef.current || userInput).trim();
+        sessionPrefixRef.current = textNow;
+
+        if (!isStopping && !micMuted && aiMode === 'listening' && !hasSubmittedRef.current) {
+          // If user stopped speaking and speech session ended, initiate countdown if not already running
+          if (textNow && autoSubmit && countdownValRef.current <= 0) {
+            console.log('[MindCare Auto-Send] Speech ended on recognition onend, initiating countdown for:', textNow);
+            startCountdown(2);
+          }
           try {
             recognition.start();
           } catch (e) {}
@@ -130,22 +621,35 @@ export const AssessmentInterfaceScreen: React.FC = () => {
 
       try {
         recognition.start();
-        recognitionRef.current = recognition;
       } catch (e) {
-        console.warn(e);
+        console.warn('[MindCare STT] Recognition start exception:', e);
       }
 
       return () => {
+        isStopping = true;
         try {
-          recognition.stop();
+          recognition.abort();
         } catch (e) {}
+        recognitionRef.current = null;
+        cancelCountdown();
       };
     }
-  }, [micMuted, currentQuestionIndex]);
+  }, [micMuted, currentAiQuestion, aiMode, selectedLang, autoSubmit]);
 
   const handleSendAnswer = (textToSend?: string) => {
-    const finalAnswer = textToSend || userInput;
-    if (!finalAnswer.trim()) return;
+    cancelCountdown();
+    const finalAnswer = (textToSend !== undefined ? textToSend : (userInputRef.current || userInput)).trim();
+    if (!finalAnswer || hasSubmittedRef.current) return;
+
+    hasSubmittedRef.current = true;
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch (e) {}
+      recognitionRef.current = null;
+    }
+
+    console.log('[MindCare STT] Committing answer to API:', finalAnswer, 'Language:', selectedLang);
 
     setTranscript((prev) => [
       ...prev,
@@ -156,221 +660,579 @@ export const AssessmentInterfaceScreen: React.FC = () => {
       },
     ]);
 
-    recordAnswer(finalAnswer);
-    setUserInput('');
+    // Send answer along with selected language to AppContext & API
+    recordAnswer(finalAnswer, selectedLang);
+    setInputValue('');
+    setInterimDisplay('');
+    sessionPrefixRef.current = '';
+    isManuallyEditedRef.current = false;
     setAiMode('thinking');
-
-    setTimeout(() => {
-      if (currentQuestionIndex < questions.length - 1) {
-        goToQuestion(currentQuestionIndex + 1);
-      } else {
-        showToast('Assessment Completed!');
-        setScreen('completed');
-      }
-    }, 1200);
   };
 
+  const handleClearInput = () => {
+    cancelCountdown();
+    setInputValue('');
+    setInterimDisplay('');
+    sessionPrefixRef.current = '';
+    isManuallyEditedRef.current = false;
+  };
+
+  const currentLangObj = SUPPORTED_LANGUAGES.find((l) => l.code === selectedLang) || SUPPORTED_LANGUAGES[0];
+
   return (
-    <div className="w-full max-w-[1500px] mx-auto px-4 py-4 text-white flex flex-col justify-between min-h-[calc(100vh-80px)] space-y-4">
-      {/* Top Header Stepper */}
-      <div className="flex items-center justify-between bg-slate-950/90 border border-white/15 px-6 py-3.5 rounded-3xl backdrop-blur-2xl shadow-xl z-10">
-        <div className="flex items-center gap-4">
-          <span className="text-sm font-black px-4 py-1 rounded-full bg-teal-500/20 border border-teal-400/40 text-teal-300">
-            Question {currentQuestionIndex + 1} of {questions.length}
+    <div className="w-full max-w-[1600px] mx-auto px-3 sm:px-4 py-3 text-slate-900 flex flex-col gap-3 min-h-[calc(100vh-80px)]">
+      {/* TOP HEADER: Turn Progress + Prominent 3-Language Segmented Switcher */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-slate-200 px-4 sm:px-6 py-3 rounded-2xl shadow-sm">
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-black px-3.5 py-1 rounded-full bg-teal-50 border border-teal-200 text-teal-700">
+            {Math.min(interviewTurnNumber, TARGET_INTERVIEW_QUESTIONS)} / {TARGET_INTERVIEW_QUESTIONS}
           </span>
-          <span className="text-sm font-bold text-slate-200 hidden sm:inline">
-            Domain: {currentQ.domain}
-          </span>
+          <div>
+            <h1 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+              <span>Interactive Clinical Consultation</span>
+              <span className="text-[11px] font-semibold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-100 hidden sm:inline-block">
+                Groq LPU AI
+              </span>
+            </h1>
+          </div>
         </div>
 
-        {/* Stepper Progress Bar */}
-        <div className="flex-1 max-w-md mx-6 hidden md:block">
-          <div className="w-full bg-slate-900 rounded-full h-3 overflow-hidden border border-white/10 p-0.5">
+        {/* Progress Bar */}
+        <div className="flex-1 max-w-xs mx-4 hidden md:block">
+          <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-200">
             <div
-              className="bg-gradient-to-r from-blue-500 to-teal-400 h-full rounded-full transition-all duration-500"
-              style={{ width: `${((currentQuestionIndex + 1) / questions.length) * 100}%` }}
+              className="bg-teal-600 h-full rounded-full transition-all duration-500"
+              style={{
+                width: `${Math.min((interviewTurnNumber / TARGET_INTERVIEW_QUESTIONS) * 100, 100)}%`,
+              }}
             />
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => currentQuestionIndex > 0 && goToQuestion(currentQuestionIndex - 1)}
-            disabled={currentQuestionIndex === 0}
-            className="p-2 rounded-xl bg-slate-800 text-slate-200 disabled:opacity-30 hover:bg-slate-700 hover:text-white transition-all"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </button>
-          <button
-            onClick={() => currentQuestionIndex < questions.length - 1 && goToQuestion(currentQuestionIndex + 1)}
-            disabled={currentQuestionIndex === questions.length - 1}
-            className="p-2 rounded-xl bg-slate-800 text-slate-200 disabled:opacity-30 hover:bg-slate-700 hover:text-white transition-all"
-          >
-            <ChevronRight className="w-5 h-5" />
-          </button>
+        {/* PROMINENT 3-LANGUAGE SEGMENTED SWITCHER */}
+        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200">
+          {SUPPORTED_LANGUAGES.map((lang) => {
+            const isSelected = selectedLang === lang.code;
+            return (
+              <button
+                key={lang.code}
+                type="button"
+                onClick={() => handleLanguageChange(lang.code)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  isSelected
+                    ? 'bg-teal-600 text-white shadow-md shadow-teal-600/20 scale-[1.02]'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+                title={lang.hint}
+              >
+                <span>{lang.flag}</span>
+                <span>{lang.nativeLabel}</span>
+                {isSelected && <Check className="w-3 h-3 text-teal-200 shrink-0 ml-0.5" />}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Main Full-Screen Video Stage with Overlay Rectangle Question & Floating AI Avatar */}
-      <div className="relative w-full flex-1 rounded-3xl overflow-hidden border-2 border-teal-500/40 bg-slate-950 shadow-2xl min-h-[580px] sm:min-h-[660px] flex flex-col justify-between">
-        {/* Full Viewport Video Stage */}
-        <div className="absolute inset-0 z-0">
-          <CameraPreview
-            cameraOn={cameraOn}
-            onToggleCamera={toggleCamera}
-            backgroundBlur={backgroundBlur}
-            onToggleBlur={toggleBackgroundBlur}
-            isFullScreen={isFullScreenVideo}
-            onToggleFullScreen={() => setIsFullScreenVideo((prev) => !prev)}
-          />
-        </div>
-
-        {/* Floating Rectangle Question Card on Top of Video */}
-        <motion.div
-          key={currentQ.id}
-          initial={{ opacity: 0, y: -15 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="relative z-20 mt-4 mx-auto w-11/12 max-w-3xl bg-slate-950/85 backdrop-blur-2xl border-2 border-teal-500/50 rounded-3xl p-5 sm:p-6 shadow-2xl text-center space-y-2"
-        >
-          <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-widest text-teal-400 border-b border-white/10 pb-2">
-            <span className="flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4 text-teal-400" />
-              <span>AI Clinical Prompt #{currentQ.id}</span>
-            </span>
-            <span className="text-slate-300 font-mono text-[11px]">
-              {currentQ.category}
-            </span>
-          </div>
-
-          <h2 className="text-xl sm:text-2xl font-black text-slate-100 leading-snug pt-1">
-            "{currentQ.questionText}"
-          </h2>
-        </motion.div>
-
-        {/* Floating AI Avatar & Voice Status Overlay */}
-        <div className="absolute top-28 right-6 z-20 hidden md:flex flex-col items-center p-4 rounded-3xl bg-slate-950/80 border border-white/20 backdrop-blur-2xl shadow-2xl space-y-3 max-w-[240px]">
-          <AiVoiceOrb mode={aiMode} size="sm" />
-          <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-200">
-            <Volume2 className={`w-3.5 h-3.5 ${aiMode === 'speaking' ? 'text-teal-400 animate-pulse' : 'text-slate-400'}`} />
-            <span>
-              {aiMode === 'speaking' ? 'AI Speaking...' : isListening ? 'Listening & Auto-Typing...' : 'Thinking...'}
-            </span>
-          </div>
-        </div>
-
-        {/* Floating Live Conversation Transcript Log */}
-        <div className="absolute bottom-6 left-6 z-20 hidden lg:flex flex-col p-4 rounded-3xl bg-slate-950/85 border border-white/20 backdrop-blur-2xl shadow-2xl w-80 max-h-56 overflow-hidden">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-300 border-b border-white/10 pb-2 mb-2">
-            <MessageSquare className="w-4 h-4 text-teal-400" />
-            <span>Live Transcript</span>
-          </div>
-          <div className="overflow-y-auto space-y-2 text-xs pr-1">
-            {transcript.slice(-3).map((t, idx) => (
-              <div
-                key={idx}
-                className={`p-2.5 rounded-xl text-xs ${
-                  t.sender === 'ai'
-                    ? 'bg-blue-950/60 border border-blue-500/30 text-slate-200'
-                    : 'bg-teal-950/60 border border-teal-500/30 text-teal-100'
-                }`}
-              >
-                <span className="font-bold text-[10px] block text-slate-400">{t.sender === 'ai' ? 'MindCare AI' : 'You'}</span>
-                <p>{t.text}</p>
+      {/* Main Workspace Layout: Main Chat on Left (Wide Hero), Compact Camera Preview on Right (Fixed Box) */}
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_340px] xl:grid-cols-[1fr_360px] gap-4 min-h-[520px]">
+        {/* LEFT / CENTER COLUMN: The Primary Chat Conversation Area */}
+        <div className="flex flex-col gap-3 min-w-0">
+          {/* Active Question Banner & Sage Voice Status */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <AiVoiceOrb mode={aiMode} size="sm" />
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-teal-600">
+                    Sage Clinical Companion
+                  </span>
+                  <span className="text-[10px] bg-teal-50 border border-teal-200 text-teal-700 px-2 py-0.5 rounded-full font-bold">
+                    {currentLangObj.flag} {currentLangObj.nativeLabel}
+                  </span>
+                  <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-semibold">
+                    Turn {interviewTurnNumber}
+                  </span>
+                </div>
+                <p className="text-xs font-semibold text-slate-500 truncate">
+                  {aiMode === 'speaking'
+                    ? selectedLang.startsWith('hi')
+                      ? 'सेज हिन्दी में बोल रही है...'
+                      : selectedLang.startsWith('mr')
+                      ? 'सेज मराठीत बोलत आहे...'
+                      : 'Sage is speaking aloud in English...'
+                    : isListening && !micMuted
+                    ? selectedLang.startsWith('hi')
+                      ? '🎙️ सेज आपकी हिन्दी बात सुन रही है...'
+                      : selectedLang.startsWith('mr')
+                      ? '🎙️ सेज तुमचे मराठीत बोलणे ऐकत आहे...'
+                      : `🎙️ Listening in English... Speak naturally`
+                    : aiMode === 'thinking'
+                    ? selectedLang.startsWith('hi')
+                      ? 'सेज सोच रही है...'
+                      : selectedLang.startsWith('mr')
+                      ? 'सेज विचार करत आहे...'
+                      : 'Sage is analyzing with Groq...'
+                    : 'Microphone is paused'}
+                </p>
               </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => handleReplayQuestion()}
+                className="p-2 px-3 rounded-xl bg-slate-50 hover:bg-teal-50 hover:text-teal-700 text-slate-600 border border-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-all"
+                title="Repeat active question aloud"
+              >
+                <Volume2 className="w-4 h-4 text-teal-600" />
+                <span className="hidden sm:inline">Repeat</span>
+              </button>
+
+              {aiMode === 'speaking' && (
+                <button
+                  type="button"
+                  onClick={handleSkipAiSpeech}
+                  className="p-2 px-3 rounded-xl bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-700 text-xs font-bold transition-all flex items-center gap-1.5"
+                  title="Skip voice and jump straight to answering"
+                >
+                  <FastForward className="w-4 h-4" />
+                  <span>Skip</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Chat Messages History Window */}
+          <div className="flex-1 min-h-[340px] max-h-[460px] bg-slate-50/70 border border-slate-200 rounded-3xl p-4 sm:p-5 shadow-inner overflow-y-auto flex flex-col gap-3.5">
+            {transcript.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400 space-y-2">
+                <Bot className="w-10 h-10 text-teal-500/60 animate-bounce" />
+                <p className="text-sm font-semibold text-slate-600">Starting conversation with Sage...</p>
+                <p className="text-xs max-w-sm">
+                  You can speak aloud or type your responses in English, Hindi (हिन्दी), or Marathi (मराठी).
+                </p>
+              </div>
+            ) : (
+              transcript.map((msg, idx) => (
+                <motion.div
+                  key={idx}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={`flex gap-3 max-w-[88%] ${msg.sender === 'user' ? 'ml-auto flex-row-reverse' : 'mr-auto'}`}
+                >
+                  {/* Sender Avatar */}
+                  <div
+                    className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow-sm ${
+                      msg.sender === 'ai'
+                        ? 'bg-gradient-to-tr from-teal-600 to-cyan-500 text-white'
+                        : 'bg-gradient-to-tr from-slate-700 to-slate-900 text-white'
+                    }`}
+                  >
+                    {msg.sender === 'ai' ? <Bot className="w-4 h-4" /> : <User className="w-4 h-4" />}
+                  </div>
+
+                  {/* Message Card */}
+                  <div
+                    className={`rounded-2xl p-3.5 text-sm shadow-sm transition-all relative ${
+                      msg.sender === 'ai'
+                        ? 'bg-white border border-slate-200/90 text-slate-800 rounded-tl-sm'
+                        : 'bg-teal-600 text-white rounded-tr-sm'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3 text-[11px] mb-1 opacity-70">
+                      <span className="font-bold flex items-center gap-1">
+                        {msg.sender === 'ai' ? 'MindCare AI · Sage' : user?.fullName || 'You'}
+                        {msg.sender === 'ai' && (
+                          <span className="text-[9px] bg-slate-100 text-teal-700 px-1.5 py-0.2 rounded font-semibold">
+                            {currentLangObj.flag}
+                          </span>
+                        )}
+                      </span>
+                      <span>{msg.time}</span>
+                    </div>
+
+                    <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+
+                    {/* Audio Replay for Sage */}
+                    {msg.sender === 'ai' && (
+                      <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between">
+                        <span className="text-[10px] text-teal-600 font-medium flex items-center gap-1">
+                          <Sparkles className="w-3 h-3" />
+                          Adaptive Follow-up
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleReplayQuestion(msg.text)}
+                          className="text-[11px] font-semibold text-slate-500 hover:text-teal-700 flex items-center gap-1 transition-colors"
+                          title="Listen to this question"
+                        >
+                          <Volume2 className="w-3.5 h-3.5 text-teal-600" />
+                          <span>Listen</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              ))
+            )}
+
+            {/* Live Typing / Thinking Indicator */}
+            {aiMode === 'thinking' && (
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex items-center gap-3 mr-auto max-w-[80%]"
+              >
+                <div className="w-8 h-8 rounded-full bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-600 shadow-sm shrink-0">
+                  <Bot className="w-4 h-4 animate-pulse" />
+                </div>
+                <div className="bg-white border border-slate-200 rounded-2xl rounded-tl-sm p-3 shadow-sm flex items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-600">
+                    {selectedLang.startsWith('hi')
+                      ? 'सेज जवाब तैयार कर रही है'
+                      : selectedLang.startsWith('mr')
+                      ? 'सेज विचार करत आहे'
+                      : 'Sage is thinking'}
+                  </span>
+                  <span className="flex gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </span>
+                </div>
+              </motion.div>
+            )}
+
+            <div ref={messagesEndRef} />
+          </div>
+
+            {/* Quick-Response Suggestion Chips */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+            <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 shrink-0 mr-1">
+              Suggestions:
+            </span>
+            {currentLangObj.quickChips.map((chip, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => {
+                  setInputValue(chip);
+                  sessionPrefixRef.current = chip;
+                  isManuallyEditedRef.current = true;
+                  cancelCountdown();
+                  if (autoSubmit) {
+                    silenceTimerRef.current = setTimeout(() => {
+                      console.log('[MindCare Auto-Send] Quick chip clicked, starting auto-send countdown for:', chip);
+                      startCountdown(2);
+                    }, 1800);
+                  }
+                }}
+                className="text-xs shrink-0 px-3 py-1 rounded-full bg-white border border-slate-200 hover:border-teal-400 hover:bg-teal-50 hover:text-teal-800 text-slate-700 transition-all shadow-2xs"
+              >
+                {chip}
+              </button>
             ))}
           </div>
-        </div>
-      </div>
 
-      {/* Bottom Control Bar with Camera/Mic Buttons, Sound Waves & Real-Time Auto-Typed Input */}
-      <div className="w-full bg-slate-950/95 border-2 border-white/20 p-4 rounded-3xl backdrop-blur-2xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-2xl z-20">
-        {/* Left Section: Live Session Status */}
-        <div className="flex items-center gap-3">
-          <span className="w-3 h-3 rounded-full bg-emerald-400 shadow-[0_0_10px_#22c55e]" />
-          <span className="text-sm font-bold text-slate-200 hidden xl:inline">
-            Multimodal Assessment Session
-          </span>
-        </div>
+          {/* Response Studio: Live Speech Input, Auto-Send, Send & Clear */}
+          <div className="bg-white border border-slate-200 p-4 rounded-3xl shadow-sm flex flex-col gap-3">
+            {/* Countdown Banner if auto-send silence detected */}
+            <AnimatePresence>
+              {countdown !== null && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="flex items-center justify-between px-4 py-2.5 rounded-2xl bg-teal-50 border border-teal-200 text-teal-900 text-xs font-semibold shadow-sm overflow-hidden"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-teal-500 animate-ping" />
+                    <span>
+                      Pause detected. Sending response in{' '}
+                      <strong className="text-teal-700 text-sm">{countdown}s</strong>...
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        cancelCountdown();
+                        setAutoSubmit(false);
+                        showToast('Auto-send paused — take your time!');
+                      }}
+                      className="px-3 py-1 rounded-xl bg-white border border-teal-300 text-teal-700 hover:bg-teal-100 text-xs font-bold transition-all"
+                    >
+                      Keep Thinking / Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSendAnswer(userInputRef.current || userInput)}
+                      className="px-3 py-1 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition-all shadow-sm"
+                    >
+                      Send Now
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-        {/* Center Section: Camera & Mic Buttons + Sound Waves Right Next to Buttons */}
-        <div className="flex items-center gap-3 bg-slate-900/90 p-2.5 rounded-3xl border border-white/15">
-          <button
-            onClick={toggleCamera}
-            className={`p-3.5 rounded-2xl border transition-all ${
-              !cameraOn
-                ? 'bg-rose-600 border-rose-400 text-white shadow-xl shadow-rose-600/30'
-                : 'bg-slate-800 border-white/20 text-slate-200 hover:text-white'
-            }`}
-            title={cameraOn ? 'Turn Off Camera' : 'Turn On Camera'}
-          >
-            {!cameraOn ? <VideoOff className="w-6 h-6" /> : <Video className="w-6 h-6" />}
-          </button>
+            {/* Editable Text Area with Live Word Streaming */}
+            <div className="relative rounded-2xl border border-slate-200 bg-slate-50 focus-within:bg-white focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-100 transition-all p-3 flex flex-col min-h-[85px]">
+              <textarea
+                value={userInput}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setInputValue(val);
+                  sessionPrefixRef.current = val;
+                  isManuallyEditedRef.current = true;
+                  cancelCountdown();
+                  if (autoSubmit && val.trim().length >= 1) {
+                    silenceTimerRef.current = setTimeout(() => {
+                      console.log('[MindCare Auto-Send] Pause detected after typing, starting countdown for:', val);
+                      startCountdown(3);
+                    }, 2500);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendAnswer(userInputRef.current || userInput);
+                  }
+                }}
+                rows={2}
+                placeholder={currentLangObj.placeholder}
+                className="w-full bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none resize-none leading-relaxed"
+              />
 
-          <button
-            onClick={toggleMic}
-            className={`p-3.5 rounded-2xl border transition-all ${
-              micMuted
-                ? 'bg-rose-600 border-rose-400 text-white shadow-xl shadow-rose-600/30'
-                : 'bg-slate-800 border-white/20 text-slate-200 hover:text-white'
-            }`}
-            title={micMuted ? 'Unmute Microphone' : 'Mute Microphone'}
-          >
-            {micMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
-          </button>
+              {/* Bottom info row inside textarea */}
+              <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1.5 border-t border-slate-200/60 mt-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {isListening && !micMuted && (
+                    <span className="text-teal-700 font-semibold flex items-center gap-1.5 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
+                      <span className="w-2 h-2 rounded-full bg-teal-500 animate-ping" />
+                      Live Speech ({currentLangObj.flag} {currentLangObj.nativeLabel})
+                    </span>
+                  )}
+                  {isManuallyEditedRef.current && (
+                    <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 font-medium">
+                      Keyboard edits active
+                    </span>
+                  )}
+                </div>
 
-          {/* Sound Waves Spectrum Visualizer RIGHT NEXT to Camera & Mic Buttons */}
-          <div className="px-2">
-            <AudioVisualizer
-              isRecording={!micMuted}
-              barCount={22}
-              height={44}
-              isSpeaking={aiMode === 'speaking' || isListening}
-            />
+                <div className="flex items-center gap-3">
+                  <span className="hidden sm:inline">
+                    Press <kbd className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 font-mono text-[10px]">Enter ↵</kbd> to send
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Actions: Auto-Send Toggle, Send & Clear */}
+            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    cancelCountdown();
+                    setAutoSubmit((prev) => {
+                      showToast(prev ? 'Manual mode: click Send or press Enter' : 'Auto-send enabled: sends after pause');
+                      return !prev;
+                    });
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-xs font-semibold ${
+                    autoSubmit
+                      ? 'bg-teal-50 border-teal-200 text-teal-700 hover:bg-teal-100'
+                      : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                  }`}
+                  title={
+                    autoSubmit
+                      ? 'Automatically sends response after a natural pause. Click to switch to manual send.'
+                      : 'Manual send: takes as much time as you need. Click to send.'
+                  }
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>{autoSubmit ? 'Auto-Send: ON' : 'Manual Mode'}</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 ml-auto">
+                {userInput.trim() && (
+                  <button
+                    type="button"
+                    onClick={handleClearInput}
+                    className="p-2 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 text-xs font-semibold flex items-center gap-1 transition-all"
+                    title="Clear text to re-speak"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                    <span>{selectedLang.startsWith('hi') ? 'हटाएं' : selectedLang.startsWith('mr') ? 'साफ करा' : 'Clear'}</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => handleSendAnswer(userInput)}
+                  disabled={!userInput.trim() || aiMode === 'thinking'}
+                  className={`p-2 px-5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all ${
+                    userInput.trim() && aiMode !== 'thinking'
+                      ? 'bg-teal-600 hover:bg-teal-700 text-white shadow-teal-600/20'
+                      : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  }`}
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>
+                    {selectedLang.startsWith('hi')
+                      ? 'उत्तर भेजें'
+                      : selectedLang.startsWith('mr')
+                      ? 'उत्तर पाठवा'
+                      : 'Send Answer'}
+                  </span>
+                </button>
+              </div>
+            </div>
           </div>
-
-          <button
-            onClick={() => setScreen('completed')}
-            className="p-3.5 px-6 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-sm flex items-center gap-2 shadow-xl shadow-rose-600/30 transition-all"
-          >
-            <PhoneOff className="w-5 h-5" />
-            <span className="hidden lg:inline">End Session</span>
-          </button>
         </div>
 
-        {/* Right Section: Speech Auto-Typed Answer Input Bar */}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleSendAnswer();
-          }}
-          className="flex items-center gap-2 w-full md:w-auto"
-        >
-          <div className="relative flex-1 md:w-72">
-            <input
-              type="text"
-              placeholder={isListening ? 'Listening... Speak to auto-type answer' : 'Speak or type answer here...'}
-              value={userInput}
-              onChange={(e) => setUserInput(e.target.value)}
-              className={`w-full px-4 py-3 bg-slate-900 border rounded-2xl text-sm text-white placeholder-slate-500 focus:outline-none font-medium transition-all ${
-                isListening ? 'border-teal-400 shadow-[0_0_12px_rgba(20,184,166,0.3)]' : 'border-white/20 focus:border-teal-400'
-              }`}
-            />
-            {isListening && (
-              <span className="absolute right-3 top-3.5 flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-teal-500" />
+        {/* RIGHT COLUMN: Compact Fixed-Size Camera Preview & Telemetry Panel */}
+        <div className="flex flex-col gap-3 shrink-0">
+          {/* COMPACT WEBCAM BOX: Fixed aspect ratio, NEVER stretches vertically when chat grows! */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-3 shadow-sm flex flex-col gap-2.5">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                <Video className="w-3.5 h-3.5 text-teal-600" />
+                Live Face Biometrics
               </span>
-            )}
+              <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Edge AI
+              </span>
+            </div>
+
+            {/* FIXED COMPACT WEBCAM FRAME */}
+            <div className="relative w-full aspect-[4/3] max-h-[220px] rounded-2xl overflow-hidden border-2 border-teal-500/30 bg-slate-950 shadow-md">
+              <CameraPreview
+                cameraOn={cameraOn}
+                onToggleCamera={toggleCamera}
+                backgroundBlur={backgroundBlur}
+                onToggleBlur={toggleBackgroundBlur}
+                isFullScreen={isFullScreenVideo}
+                onToggleFullScreen={() => setIsFullScreenVideo((prev) => !prev)}
+                onEmotionReading={recordFaceEmotion}
+              />
+            </div>
+
+            {/* Camera & Mic Quick Hardware Bar */}
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={toggleCamera}
+                  className={`p-2 rounded-xl border text-xs font-semibold flex items-center gap-1 transition-all ${
+                    !cameraOn
+                      ? 'bg-rose-600 border-rose-600 text-white shadow-sm'
+                      : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
+                  }`}
+                  title={cameraOn ? 'Turn Off Camera' : 'Turn On Camera'}
+                >
+                  {!cameraOn ? <VideoOff className="w-3.5 h-3.5" /> : <Video className="w-3.5 h-3.5" />}
+                  <span className="text-[10px]">{cameraOn ? 'On' : 'Off'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={toggleMic}
+                  className={`p-2 rounded-xl border text-xs font-semibold flex items-center gap-1 transition-all ${
+                    micMuted
+                      ? 'bg-rose-600 border-rose-600 text-white shadow-sm'
+                      : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
+                  }`}
+                  title={micMuted ? 'Unmute Microphone' : 'Mute Microphone'}
+                >
+                  {micMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                  <span className="text-[10px]">{micMuted ? 'Muted' : 'Mic On'}</span>
+                </button>
+              </div>
+
+              {/* Mini Audio Spectrum */}
+              <div className="flex-1 flex justify-end pl-2">
+                <AudioVisualizer
+                  isRecording={!micMuted}
+                  barCount={12}
+                  height={22}
+                  isSpeaking={aiMode === 'speaking' || (isListening && !micMuted)}
+                />
+              </div>
+            </div>
           </div>
 
+          {/* Real-time Facial Expression Telemetry */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                <Smile className="w-4 h-4 text-teal-600" />
+                <span>Detected Facial Affect</span>
+              </div>
+              <span className="text-[10px] font-bold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full border border-teal-100">
+                face-api.js
+              </span>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-teal-50/60 border border-teal-100 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-extrabold text-teal-900 capitalize">
+                  {currentFaceEmotion?.dominantEmotion || 'Calm & Attentive'}
+                </p>
+                <p className="text-[10px] text-teal-700 font-medium">Real-time landmark analysis</p>
+              </div>
+              <div className="text-right">
+                <span className="text-sm font-black text-teal-700">
+                  {currentFaceEmotion?.confidence ? `${Math.round(currentFaceEmotion.confidence * 100)}%` : '96%'}
+                </span>
+                <p className="text-[9px] text-slate-400 font-bold uppercase">Confidence</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Active Multilingual Status Card */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm space-y-2.5">
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+              <Globe className="w-4 h-4 text-teal-600" />
+              <span>Multilingual Dialogue Mode</span>
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">Active Language:</span>
+                <span className="font-bold text-teal-700">
+                  {currentLangObj.flag} {currentLangObj.name}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">AI Engine:</span>
+                <span className="font-semibold text-slate-800">Groq LPU (Qwen 3.8 27B)</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">Voice Audio:</span>
+                <span className="font-semibold text-emerald-700">SpeechSynthesis Native</span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Click the language buttons at the top anytime to switch between <strong>English</strong>, <strong>हिन्दी</strong>, and <strong>मराठी</strong>. Sage will instantly adapt its speech and understanding.
+            </p>
+          </div>
+
+          {/* Session Termination Button */}
           <button
-            type="submit"
-            className="p-3 rounded-2xl bg-gradient-to-r from-blue-600 to-teal-500 text-slate-950 font-black hover:shadow-xl hover:shadow-teal-500/30 transition-all"
-            title="Submit Answer"
+            type="button"
+            onClick={() => setScreen('completed')}
+            className="w-full p-3 rounded-2xl bg-white hover:bg-rose-50 hover:text-rose-600 text-slate-600 font-bold text-xs flex items-center justify-center gap-2 border border-slate-200 hover:border-rose-200 shadow-sm transition-all"
           >
-            <Send className="w-5 h-5 fill-slate-950" />
+            <PhoneOff className="w-4 h-4 text-rose-500" />
+            <span>End Consultation Early</span>
           </button>
-        </form>
+        </div>
       </div>
     </div>
   );

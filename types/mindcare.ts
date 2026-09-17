@@ -24,13 +24,11 @@ export interface SocialPlatform {
   color: string;
 }
 
-export interface AssessmentQuestion {
-  id: number;
-  category: string;
-  questionText: string;
-  aiVoicePrompt: string;
-  sampleAnswerHint: string;
-  domain: 'Mood & Emotion' | 'Cognitive & Sleep' | 'Stress & Coping' | 'Social Engagement' | 'Overall Well-being';
+// One turn of history exchanged with the adaptive interview API
+// (app/api/interview) — mirrors the Anthropic messages shape.
+export interface InterviewMessage {
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 export interface AssessmentAnswer {
@@ -40,6 +38,52 @@ export interface AssessmentAnswer {
   sentiment: 'Positive' | 'Calm' | 'Neutral' | 'Mild Distress' | 'High Distress';
   confidence: number;
   speechDurationSec: number;
+  facialEmotion?: string;
+  linguisticEmotion?: string;
+  linguisticConfidence?: number;
+  acousticEmotion?: string;
+  acousticConfidence?: number;
+}
+
+export interface FacialEmotionSample {
+  timestamp: number;
+  dominantEmotion: string;
+  confidence: number;
+  expressions: Record<string, number>;
+  questionId?: number;
+}
+
+export interface VoiceEmotionSample {
+  timestamp: number;
+  dominantEmotion: string;
+  confidence: number;
+  expressions: Record<string, number>;
+  questionId?: number;
+}
+
+// Standardized clinical screeners (PHQ-9 / GAD-7) — real validated
+// instruments, scored with their official cutoffs, not simulated data.
+export interface ScreenerQuestion {
+  id: string;
+  instrument: 'PHQ-9' | 'GAD-7';
+  order: number;
+  text: string;
+}
+
+export interface ScreenerResult {
+  instrument: 'PHQ-9' | 'GAD-7';
+  total: number;
+  maxTotal: number;
+  severity: string;
+}
+
+export interface ReportHistoryEntry {
+  date: string;
+  completionDate: string;
+  overallScore: number;
+  riskLevel: 'Low' | 'Moderate' | 'High';
+  phq9Total?: number;
+  gad7Total?: number;
 }
 
 export interface ConditionScore {
@@ -104,6 +148,7 @@ export type ScreenId =
   | 'consent'
   | 'social'
   | 'dashboard'
+  | 'screener'
   | 'assessment'
   | 'completed'
   | 'report';
