@@ -4,6 +4,7 @@ out
 .DS_Store
 *.log
 .env*
+!.env.example
 *.sqlite
 *.sqlite3
 data/
