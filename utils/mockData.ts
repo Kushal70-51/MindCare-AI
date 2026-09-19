@@ -95,6 +95,55 @@ export function buildInterviewOpener(name?: string, lang?: string): string {
     : `Hi there, thanks for being here. Before we get started, could you tell me your age?`;
 }
 
+export const FALLBACK_QUESTION_SETS: Record<string, { questions: string[]; closing: string }> = {
+  en: {
+    questions: [
+      "How have you been sleeping lately — restful, or more restless than usual?",
+      "What's something that has been on your mind a lot this past week?",
+      "When things feel stressful or overwhelming, what do you usually do to cope?",
+      "How connected do you feel to friends, family, or people around you right now?",
+      "On a typical day lately, do you feel more energized or emotionally drained?",
+    ],
+    closing: "Thank you so much for sharing that with me. That's everything I need for now. Let's look at your report.",
+  },
+  hi: {
+    questions: [
+      "हाल ही में आपकी नींद कैसी रही है — क्या आपको आराम मिल रहा है, या बेचैनी रहती है?",
+      "इस पिछले हफ्ते ऐसी कौन सी बात है जो आपके मन में सबसे ज्यादा चल रही है?",
+      "जब तनाव या चिंता महसूस होती है, तो खुद को शांत करने के लिए आप क्या करते हैं?",
+      "आजकल आप अपने दोस्तों या परिवार के साथ कितना जुड़ाव महसूस करते हैं?",
+      "आमतौर पर दिनभर में आप कैसा महसूस करते हैं — ऊर्जावान या थका हुआ?",
+    ],
+    closing: "अपने मन की बात साझा करने के लिए बहुत-बहुत धन्यवाद। अब हम आपकी रिपोर्ट की ओर बढ़ते हैं।",
+  },
+  mr: {
+    questions: [
+      "अलीकडच्या काळात तुमची झोप कशी आहे — शांत झोप लागते की अस्वस्थता वाटते?",
+      "गेल्या आठवड्यात अशी कोणती गोष्ट आहे जी तुमच्या मनात वारंवार येत आहे?",
+      "जेव्हा ताण किंवा अस्वस्थता जाणवते, तेव्हा स्वतःला शांत करण्यासाठी तुम्ही काय करता?",
+      "सध्या तुम्ही कुटुंब किंवा मित्रांशी किती जोडलेले आहात असे वाटते?",
+      "दिवसभरात साधारणपणे तुम्हाला कसे वाटते — उत्साही की खूप थकलेले?",
+    ],
+    closing: "तुमच्या भावना मनमोकळेपणाने व्यक्त केल्याबद्दल मनापासून धन्यवाद. आता आपण तुमच्या अहवालाकडे वळूया.",
+  },
+};
+
+export function getOfflineFallbackTurn(
+  history: Array<{ role: string; content: string }>,
+  lang?: string
+): { reply: string; continue_interview: boolean } {
+  const l = String(lang || 'en').toLowerCase();
+  const key = l.startsWith('hi') ? 'hi' : l.startsWith('mr') ? 'mr' : 'en';
+  const pack = FALLBACK_QUESTION_SETS[key] || FALLBACK_QUESTION_SETS.en;
+  const assistantTurns = (history || []).filter((m) => m.role === 'assistant').length;
+
+  if (assistantTurns >= 6) {
+    return { reply: pack.closing, continue_interview: false };
+  }
+  const qIndex = Math.max(0, assistantTurns - 1) % pack.questions.length;
+  return { reply: pack.questions[qIndex], continue_interview: true };
+}
+
 export const INITIAL_REPORT: MentalHealthReport = {
   overallScore: 78,
   overallStatus: 'Mild Stress & Sleep Irregularity',

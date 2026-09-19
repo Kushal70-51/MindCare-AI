@@ -15,7 +15,13 @@ export function useMic() {
 
   const start = useCallback(async () => {
     try {
-      const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const s = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
       streamRef.current = s;
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       ctxRef.current = ctx;

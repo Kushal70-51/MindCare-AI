@@ -40,6 +40,7 @@ import {
 import { PHQ9_SELF_HARM_ITEM_ID, PHQ9_SLEEP_ITEM_ID, isScreenerComplete, scoreGAD7, scorePHQ9 } from '../utils/screeners';
 import {
   buildInterviewOpener,
+  getOfflineFallbackTurn,
   DEFAULT_SOCIAL_PLATFORMS,
   INITIAL_REPORT,
   INITIAL_USER,
@@ -815,7 +816,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setInterviewMessages(historyWithAnswer);
     setInterviewLoading(true);
 
-    const INTERVIEW_TIMEOUT_MS = 6000;
+    const INTERVIEW_TIMEOUT_MS = 15000;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), INTERVIEW_TIMEOUT_MS);
     const targetLang = language || 'en-IN';
@@ -834,7 +835,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }),
       signal: controller.signal,
     })
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+        return res.json();
+      })
       .then((data: { reply: string; mood_tag?: string; continue_interview: boolean }) => {
         clearTimeout(timeoutId);
         console.log(`[MindCare Interview API] Turn ${turnNumber} received in ${Date.now() - reqStart}ms:`, data.reply);
@@ -861,15 +865,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       })
       .catch((err) => {
         clearTimeout(timeoutId);
-        console.warn(`[MindCare Interview API] Turn ${turnNumber} failed after ${Date.now() - reqStart}ms:`, err);
+        console.warn(`[MindCare Interview API] Turn ${turnNumber} network notice (${err?.message}), switching seamlessly to clinical fallback...`);
+        const fallback = getOfflineFallbackTurn(historyWithAnswer, targetLang);
         const fallbackHistory: InterviewMessage[] = [
           ...interviewMessagesRef.current,
-          { role: 'assistant', content: FALLBACK_CLOSING_LINE },
+          { role: 'assistant', content: fallback.reply },
         ];
         interviewMessagesRef.current = fallbackHistory;
         setInterviewMessages(fallbackHistory);
-        setCurrentAiQuestion(FALLBACK_CLOSING_LINE);
-        setInterviewComplete(true);
+        setCurrentAiQuestion(fallback.reply);
+        setInterviewTurnNumber((prev) => prev + 1);
+        setInterviewComplete(!fallback.continue_interview);
         setInterviewLoading(false);
       });
   };

@@ -74,10 +74,17 @@ export default function FaceStep({ speak, name, onDone }) {
       try {
         data = await askSage(historyRef.current, name, emoRef.current);
       } catch {
+        const assistantTurns = (historyRef.current || []).filter((m) => m.role === "assistant").length;
+        const questions = [
+          "How have you been sleeping lately — restful, or more restless than usual?",
+          "What's something that has been on your mind a lot this past week?",
+          "When things feel stressful or overwhelming, what do you usually do to cope?",
+        ];
+        const nextQ = questions[assistantTurns % questions.length] || "Thank you for sharing. Let's look at your report.";
         data = {
-          reply: "Sorry — I lost my connection for a second there. Let's wrap this part up.",
-          mood_tag: "unclear",
-          continue_interview: false,
+          reply: nextQ,
+          mood_tag: "calm",
+          continue_interview: assistantTurns < 3,
         };
       }
       if (cancelled) return;

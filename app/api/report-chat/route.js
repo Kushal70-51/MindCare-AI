@@ -3,9 +3,8 @@
 // Answers patient and clinician questions based on the SHAP report JSON.
 // OpenRouter has been completely removed.
 
-const GEMINI_MODELS = ["gemini-flash-latest", "gemini-2.5-flash"];
-
-const GROQ_MODEL = "qwen/qwen3.8-27b";
+const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-3.6-flash", "gemini-flash-latest"];
+const GROQ_MODELS = ["qwen/qwen3.8-27b", "openai/gpt-oss-20b"];
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 const SYSTEM_PROMPT = `You are the MindCare AI Report Assistant — a warm, clear, compassionate guide helping the
@@ -121,38 +120,41 @@ export async function POST(request) {
 
     // 3. Fallback: Groq LPU (if Gemini endpoints are down or exhausted)
     if (!reply && groqKey) {
-      console.warn("[ReportChat] Gemini failed, attempting Groq fallback");
-      try {
-        const groqMessages = [
-          { role: "system", content: systemText },
-          ...(Array.isArray(history) ? history : []).map((m) => ({
-            role: m.role === "assistant" ? "assistant" : "user",
-            content: String(m.text || m.content || ""),
-          })),
-          { role: "user", content: question },
-        ];
+      console.warn("[ReportChat] Gemini failed, attempting Groq fallback models");
+      const groqMessages = [
+        { role: "system", content: systemText },
+        ...(Array.isArray(history) ? history : []).map((m) => ({
+          role: m.role === "assistant" ? "assistant" : "user",
+          content: String(m.text || m.content || ""),
+        })),
+        { role: "user", content: question },
+      ];
 
-        const res = await fetch(GROQ_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${groqKey}`,
-          },
-          body: JSON.stringify({
-            model: GROQ_MODEL,
-            messages: groqMessages,
-            max_tokens: 380,
-            temperature: 0.6,
-          }),
-          signal: controller.signal,
-        });
+      for (const gModel of GROQ_MODELS) {
+        try {
+          const res = await fetch(GROQ_URL, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${groqKey}`,
+            },
+            body: JSON.stringify({
+              model: gModel,
+              messages: groqMessages,
+              max_tokens: 380,
+              temperature: 0.6,
+            }),
+            signal: controller.signal,
+          });
 
-        if (res.ok) {
-          const data = await res.json();
-          reply = data?.choices?.[0]?.message?.content?.trim();
+          if (res.ok) {
+            const data = await res.json();
+            reply = data?.choices?.[0]?.message?.content?.trim();
+            if (reply) break;
+          }
+        } catch (groqErr) {
+          console.warn(`[ReportChat] Groq model ${gModel} error:`, groqErr.message);
         }
-      } catch (groqErr) {
-        console.warn("[ReportChat] Groq fallback error:", groqErr.message);
       }
     }
 

@@ -24,6 +24,7 @@ import {
   Bot,
   User,
   Check,
+  ArrowRight,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -104,6 +105,8 @@ export const AssessmentInterfaceScreen: React.FC = () => {
     recordVoiceEmotion,
   } = useApp() as any;
 
+  // Language Selection Pre-Step
+  const [hasSelectedLanguage, setHasSelectedLanguage] = useState<boolean>(false);
   const [userInput, setUserInput] = useState('');
   const [interimDisplay, setInterimDisplay] = useState('');
   const [aiMode, setAiMode] = useState<'speaking' | 'listening' | 'thinking'>('speaking');
@@ -191,11 +194,13 @@ export const AssessmentInterfaceScreen: React.FC = () => {
   // Records audio samples per question for wav2vec2 acoustic tone classification
   useVoiceEmotion(aiMode === 'listening' && !micMuted, interviewTurnNumber, recordVoiceEmotion);
 
-  // Start interview with selected language opener on mount
+  // Start interview with selected language opener once language is confirmed
   useEffect(() => {
-    startInterview(selectedLang);
+    if (hasSelectedLanguage) {
+      startInterview(selectedLang);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [hasSelectedLanguage]);
 
   // Helper to find the best matching browser TTS voice and its effective language tag
   const getBestVoice = (
@@ -465,9 +470,10 @@ export const AssessmentInterfaceScreen: React.FC = () => {
         showToast('Assessment Completed!');
         setScreen('completed');
       } else {
+        // 600ms acoustic buffer allows speaker playback to clear so TTS audio doesn't bleed into mic
         setTimeout(() => {
           setAiMode('listening');
-        }, 400);
+        }, 600);
       }
     };
 
@@ -487,7 +493,7 @@ export const AssessmentInterfaceScreen: React.FC = () => {
     if (!textToPlay) return;
     cancelCountdown();
     speakText(textToPlay, selectedLang, () => {
-      setTimeout(() => setAiMode('listening'), 400);
+      setTimeout(() => setAiMode('listening'), 600);
     });
   };
 
@@ -497,10 +503,10 @@ export const AssessmentInterfaceScreen: React.FC = () => {
         window.speechSynthesis.cancel();
       } catch (e) {}
     }
-    setAiMode('listening');
+    setTimeout(() => setAiMode('listening'), 300);
   };
 
-  // Continuous Speech-to-Text (STT) Engine with Active Language Support & Error Auto-Recovery
+  // Continuous Speech-to-Text (STT) Engine with Active Language Support, Smart Merging & Robust Auto-Recovery
   useEffect(() => {
     if (micMuted || aiMode !== 'listening') {
       if (recognitionRef.current) {
@@ -528,12 +534,14 @@ export const AssessmentInterfaceScreen: React.FC = () => {
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
       recognition.lang = selectedLang;
 
       let isStopping = false;
+      let restartTimer: ReturnType<typeof setTimeout> | null = null;
       recognitionRef.current = recognition;
 
-      console.log('[MindCare STT] Recognizer started for language:', selectedLang);
+      console.log('[MindCare STT] High-fidelity engine active. Listening for language:', selectedLang);
 
       recognition.onstart = () => {
         setIsListening(true);
@@ -544,49 +552,58 @@ export const AssessmentInterfaceScreen: React.FC = () => {
         let sessionInterim = '';
 
         for (let i = 0; i < event.results.length; i++) {
-          const segment = event.results[i][0].transcript || '';
-          if (event.results[i].isFinal) {
-            sessionFinal += segment + ' ';
+          const res = event.results[i];
+          const segment = res[0]?.transcript || '';
+          // Filter out low-confidence acoustic fragments if confidence is available
+          if (res.isFinal) {
+            sessionFinal += (sessionFinal ? ' ' : '') + segment.trim();
           } else {
-            sessionInterim += segment;
+            sessionInterim += (sessionInterim ? ' ' : '') + segment.trim();
           }
         }
 
         sessionFinal = sessionFinal.trim();
         sessionInterim = sessionInterim.trim();
 
-        // Single clean computation of words spoken in the current recognition session
+        // Calculate spoken text in active session, giving priority to confirmed final words
         const currentSpoken = (sessionFinal + (sessionFinal && sessionInterim ? ' ' : '') + sessionInterim).trim();
         const prefix = sessionPrefixRef.current.trim();
-        const fullDisplay = prefix ? (currentSpoken ? `${prefix} ${currentSpoken}` : prefix) : currentSpoken;
+
+        let fullDisplay = '';
+        if (!prefix) {
+          fullDisplay = currentSpoken;
+        } else if (!currentSpoken) {
+          fullDisplay = prefix;
+        } else if (currentSpoken.toLowerCase().startsWith(prefix.toLowerCase())) {
+          // Prevent text duplication if engine returns full sentence context
+          fullDisplay = currentSpoken;
+        } else {
+          fullDisplay = `${prefix} ${currentSpoken}`;
+        }
 
         if (fullDisplay) {
           setInputValue(fullDisplay);
           setInterimDisplay(sessionInterim);
         }
 
-        // Voice activity detected: cancel any active countdown while user is speaking
+        // Voice activity detected: cancel any pending silence timers/countdowns while user speaks
         cancelCountdown();
 
-        // Trigger auto-send countdown after 2.4 seconds of calm pause
+        // Schedule responsive auto-send after 1.4s of calm pause
         if (autoSubmit && fullDisplay.trim().length >= 1) {
           silenceTimerRef.current = setTimeout(() => {
             const currentVal = (userInputRef.current || fullDisplay).trim();
             if (currentVal && !hasSubmittedRef.current && aiMode === 'listening') {
-              console.log('[MindCare Auto-Send] 2.4s pause detected, starting countdown for:', currentVal);
-              startCountdown(3);
+              console.log('[MindCare Auto-Send] Pause detected, initiating countdown for:', currentVal);
+              startCountdown(2);
             }
-          }, 2400);
+          }, 1400);
         }
       };
 
       recognition.onerror = (err: any) => {
         const errType = err?.error;
-        if (errType === 'no-speech') {
-          // Ambient pause — normal
-          return;
-        }
-        if (errType === 'aborted') {
+        if (errType === 'no-speech' || errType === 'aborted') {
           return;
         }
         console.warn('[MindCare STT] Recognition error:', errType);
@@ -597,7 +614,7 @@ export const AssessmentInterfaceScreen: React.FC = () => {
                 recognition.start();
               } catch (e) {}
             }
-          }, 400);
+          }, 300);
         }
       };
 
@@ -606,14 +623,28 @@ export const AssessmentInterfaceScreen: React.FC = () => {
         sessionPrefixRef.current = textNow;
 
         if (!isStopping && !micMuted && aiMode === 'listening' && !hasSubmittedRef.current) {
-          // If user stopped speaking and speech session ended, initiate countdown if not already running
+          // If user stopped speaking and speech session ended, initiate fast countdown if text present
           if (textNow && autoSubmit && countdownValRef.current <= 0) {
-            console.log('[MindCare Auto-Send] Speech ended on recognition onend, initiating countdown for:', textNow);
+            console.log('[MindCare Auto-Send] Speech session ended, starting countdown for:', textNow);
             startCountdown(2);
           }
-          try {
-            recognition.start();
-          } catch (e) {}
+
+          // Safely restart recognition after short delay to prevent InvalidStateError in Chrome/Edge
+          restartTimer = setTimeout(() => {
+            if (!isStopping && !micMuted && aiMode === 'listening' && !hasSubmittedRef.current) {
+              try {
+                recognition.start();
+                setIsListening(true);
+              } catch (e) {
+                console.warn('[MindCare STT] Safe restart notice, retrying engine...', e);
+                setTimeout(() => {
+                  if (!isStopping && !micMuted && aiMode === 'listening' && !hasSubmittedRef.current) {
+                    try { recognition.start(); } catch (e2) {}
+                  }
+                }, 250);
+              }
+            }
+          }, 100);
         } else {
           setIsListening(false);
         }
@@ -622,11 +653,12 @@ export const AssessmentInterfaceScreen: React.FC = () => {
       try {
         recognition.start();
       } catch (e) {
-        console.warn('[MindCare STT] Recognition start exception:', e);
+        console.warn('[MindCare STT] Recognition initial start notice:', e);
       }
 
       return () => {
         isStopping = true;
+        if (restartTimer) clearTimeout(restartTimer);
         try {
           recognition.abort();
         } catch (e) {}
@@ -679,10 +711,95 @@ export const AssessmentInterfaceScreen: React.FC = () => {
 
   const currentLangObj = SUPPORTED_LANGUAGES.find((l) => l.code === selectedLang) || SUPPORTED_LANGUAGES[0];
 
+  if (!hasSelectedLanguage) {
+    const activeLangInfo = SUPPORTED_LANGUAGES.find((l) => l.code === selectedLang) || SUPPORTED_LANGUAGES[0];
+    return (
+      <div className="w-full max-w-4xl mx-auto px-4 py-8 text-slate-900 min-h-[calc(100vh-100px)] flex flex-col justify-center">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-10 shadow-xl space-y-8"
+        >
+          {/* Header */}
+          <div className="flex flex-col items-center text-center space-y-3">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-teal-50 border border-teal-200 text-teal-700 text-xs font-extrabold tracking-wide uppercase">
+              <Globe className="w-4 h-4 text-teal-600" />
+              <span>Multilingual Consultation Setup</span>
+            </div>
+            <h1 className="text-2xl sm:text-4xl font-black text-slate-900">
+              Choose Your Preferred Language
+            </h1>
+            <p className="text-sm text-slate-500 max-w-xl leading-relaxed">
+              Sage AI Companion conducts spoken clinical check-ins natively in English, Hindi, and Marathi. Please select your preferred language to begin.
+            </p>
+          </div>
+
+          {/* 3 Interactive Language Option Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {SUPPORTED_LANGUAGES.map((lang) => {
+              const isSelected = selectedLang === lang.code;
+              return (
+                <button
+                  key={lang.code}
+                  type="button"
+                  onClick={() => setSelectedLang(lang.code)}
+                  className={`p-6 rounded-2xl border-2 text-left flex flex-col justify-between gap-4 transition-all relative overflow-hidden ${
+                    isSelected
+                      ? 'border-teal-600 bg-teal-50/50 shadow-lg shadow-teal-600/10 scale-[1.02]'
+                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-4xl">{lang.flag}</span>
+                    {isSelected && (
+                      <span className="w-6 h-6 rounded-full bg-teal-600 text-white flex items-center justify-center shadow-sm">
+                        <Check className="w-3.5 h-3.5" />
+                      </span>
+                    )}
+                  </div>
+
+                  <div>
+                    <h3 className="text-xl font-black text-slate-900">{lang.nativeLabel}</h3>
+                    <p className="text-xs font-semibold text-slate-500">{lang.name}</p>
+                    <p className="text-xs text-slate-600 mt-2 leading-relaxed">{lang.hint}</p>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-200/60 text-[11px] font-medium text-teal-800 bg-teal-50/90 px-3 py-1.5 rounded-xl truncate">
+                    Preview: "{buildInterviewOpener(user?.fullName, lang.code).slice(0, 42)}..."
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Start Consultation Action Button */}
+          <div className="flex flex-col items-center gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setHasSelectedLanguage(true);
+              }}
+              className="w-full sm:w-auto px-10 py-4 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-base shadow-lg shadow-teal-600/25 hover:shadow-teal-600/40 transition-all flex items-center justify-center gap-3"
+            >
+              <Sparkles className="w-5 h-5 text-teal-200" />
+              <span>
+                Start Consultation in {activeLangInfo.nativeLabel}
+              </span>
+              <ArrowRight className="w-5 h-5" />
+            </button>
+            <p className="text-xs text-slate-400">
+              You can also switch your consultation language at any time during the interview.
+            </p>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full max-w-[1600px] mx-auto px-3 sm:px-4 py-3 text-slate-900 flex flex-col gap-3 min-h-[calc(100vh-80px)]">
+    <div className="w-full max-w-[1600px] mx-auto px-3 sm:px-4 py-2 text-slate-900 flex flex-col gap-2.5 h-[calc(100vh-65px)] overflow-hidden">
       {/* TOP HEADER: Turn Progress + Prominent 3-Language Segmented Switcher */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-slate-200 px-4 sm:px-6 py-3 rounded-2xl shadow-sm">
+      <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 bg-white border border-slate-200 px-4 sm:px-6 py-2.5 rounded-2xl shadow-sm">
         <div className="flex items-center gap-3">
           <span className="text-xs font-black px-3.5 py-1 rounded-full bg-teal-50 border border-teal-200 text-teal-700">
             {Math.min(interviewTurnNumber, TARGET_INTERVIEW_QUESTIONS)} / {TARGET_INTERVIEW_QUESTIONS}
@@ -735,11 +852,11 @@ export const AssessmentInterfaceScreen: React.FC = () => {
       </div>
 
       {/* Main Workspace Layout: Main Chat on Left (Wide Hero), Compact Camera Preview on Right (Fixed Box) */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_340px] xl:grid-cols-[1fr_360px] gap-4 min-h-[520px]">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_340px] xl:grid-cols-[1fr_360px] gap-3 min-h-0 overflow-hidden">
         {/* LEFT / CENTER COLUMN: The Primary Chat Conversation Area */}
-        <div className="flex flex-col gap-3 min-w-0">
+        <div className="flex flex-col gap-2.5 min-w-0 h-full overflow-hidden">
           {/* Active Question Banner & Sage Voice Status */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center justify-between gap-3">
+          <div className="shrink-0 bg-white border border-slate-200 rounded-2xl p-3 sm:p-3.5 shadow-sm flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <AiVoiceOrb mode={aiMode} size="sm" />
               <div className="min-w-0">
@@ -804,7 +921,7 @@ export const AssessmentInterfaceScreen: React.FC = () => {
           </div>
 
           {/* Chat Messages History Window */}
-          <div className="flex-1 min-h-[340px] max-h-[460px] bg-slate-50/70 border border-slate-200 rounded-3xl p-4 sm:p-5 shadow-inner overflow-y-auto flex flex-col gap-3.5">
+          <div className="flex-1 min-h-0 bg-slate-50/70 border border-slate-200 rounded-3xl p-4 sm:p-5 shadow-inner overflow-y-auto flex flex-col gap-3.5">
             {transcript.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400 space-y-2">
                 <Bot className="w-10 h-10 text-teal-500/60 animate-bounce" />
@@ -908,7 +1025,7 @@ export const AssessmentInterfaceScreen: React.FC = () => {
           </div>
 
             {/* Quick-Response Suggestion Chips */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+          <div className="shrink-0 flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
             <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 shrink-0 mr-1">
               Suggestions:
             </span>
@@ -936,7 +1053,7 @@ export const AssessmentInterfaceScreen: React.FC = () => {
           </div>
 
           {/* Response Studio: Live Speech Input, Auto-Send, Send & Clear */}
-          <div className="bg-white border border-slate-200 p-4 rounded-3xl shadow-sm flex flex-col gap-3">
+          <div className="shrink-0 bg-white border border-slate-200 p-3 sm:p-4 rounded-3xl shadow-sm flex flex-col gap-2.5">
             {/* Countdown Banner if auto-send silence detected */}
             <AnimatePresence>
               {countdown !== null && (
@@ -1094,8 +1211,8 @@ export const AssessmentInterfaceScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* RIGHT COLUMN: Compact Fixed-Size Camera Preview & Telemetry Panel */}
-        <div className="flex flex-col gap-3 shrink-0">
+        {/* RIGHT COLUMN: Compact Fixed-Size Camera Preview & Telemetry Panel (Non-scrolling camera view) */}
+        <div className="flex flex-col gap-2.5 shrink-0 w-full lg:w-[340px] xl:w-[360px] h-full overflow-y-auto scrollbar-none">
           {/* COMPACT WEBCAM BOX: Fixed aspect ratio, NEVER stretches vertically when chat grows! */}
           <div className="bg-white border border-slate-200 rounded-3xl p-3 shadow-sm flex flex-col gap-2.5">
             <div className="flex items-center justify-between px-1">

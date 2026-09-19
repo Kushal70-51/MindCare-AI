@@ -1,70 +1,23 @@
-// Adaptive interview LLM call — powered exclusively by ultra-fast Groq LPU (Qwen 3.8 27B)
-// with automatic Google Gemini fallback (and localized offline clinical safeguards).
+// Adaptive interview LLM engine — powered by Groq LPU (GPT-OSS 20B & Qwen 3.8 27B)
+// with automatic Google Gemini fallback and localized dynamic safeguards.
 // Delivers sub-second, empathetic clinical dialogue in English, Hindi, and Marathi.
-// OpenRouter has been completely removed.
 
-const GROQ_MODEL = "qwen/qwen3.8-27b";
+const GROQ_MODELS = ["openai/gpt-oss-20b", "qwen/qwen3.8-27b"];
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
-const GEMINI_MODELS = ["gemini-flash-latest", "gemini-2.5-flash"];
+const GEMINI_MODELS = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-flash-latest"];
 const MAX_TURNS = 6;
-const REQUEST_TIMEOUT_MS = 4500;
-const MAX_TOKENS = 180;
+const MAX_TOKENS = 450;
 
-const SYSTEM_PROMPT_CORE = `You are Sage, the voice of the MindCare AI Companion — a warm, empathetic wellbeing check-in guide conducting a short, spoken clinical interview.
+const SYSTEM_PROMPT_CORE = `You are Sage, the voice of the MindCare AI Companion — a warm, empathetic wellbeing check-in guide conducting a real, spoken clinical interview.
 Rules:
-- Speak like a caring, attentive friend. 1-2 short, spoken sentences (no markdown, no bullets, no emojis).
-- First acknowledge the person's answer with genuine empathy, then ask exactly ONE new wellbeing question.
+
+- Speak like a caring, attentive friend in 1-2 short spoken sentences (no markdown, no bullets, no emojis).
+- CRITICAL: Read the person's previous response carefully. First acknowledge what they specifically shared with genuine empathy, then ask exactly ONE relevant follow-up question based directly on their answer.
 - Do not repeat questions or re-ask their age.
 - Screening aid, not diagnosis. Never diagnose or alarm.
-- On turn 6 or when wrapping up, give a warm closing line without a question, and set continue_interview to false.
 - Return ONLY a JSON object: {"reply": string, "mood_tag": string, "continue_interview": boolean}.
 - mood_tag MUST be a 1-3 word English emotional descriptor (e.g. "anxious", "fatigued", "calm", "overwhelmed").`;
-
-const FALLBACKS = {
-  en: {
-    questions: [
-      "How have you been sleeping lately — restful, or more restless than usual?",
-      "What's something that has been on your mind a lot this past week?",
-      "When things feel stressful or overwhelming, what do you usually do to cope?",
-      "How connected do you feel to friends, family, or people around you right now?",
-      "On a typical day lately, do you feel more energized or emotionally drained?",
-    ],
-    closing: "Thank you so much for sharing that with me. That's everything I need for now. Let's look at your report.",
-  },
-  hi: {
-    questions: [
-      "हाल ही में आपकी नींद कैसी रही है — क्या आपको आराम मिल रहा है, या बेचैनी रहती है?",
-      "इस पिछले हफ्ते ऐसी कौन सी बात है जो आपके मन में सबसे ज्यादा चल रही है?",
-      "जब तनाव या चिंता महसूस होती है, तो खुद को शांत करने के लिए आप क्या करते हैं?",
-      "आजकल आप अपने दोस्तों या परिवार के साथ कितना जुड़ाव महसूस करते हैं?",
-      "आमतौर पर दिनभर में आप कैसा महसूस करते हैं — ऊर्जावान या थका हुआ?",
-    ],
-    closing: "अपने मन की बात साझा करने के लिए बहुत-बहुत धन्यवाद। अब हम आपकी रिपोर्ट की ओर बढ़ते हैं।",
-  },
-  mr: {
-    questions: [
-      "अलीकडच्या काळात तुमची झोप कशी आहे — शांत झोप लागते की अस्वस्थता वाटते?",
-      "गेल्या आठवड्यात अशी कोणती गोष्ट आहे जी तुमच्या मनात वारंवार येत आहे?",
-      "जेव्हा ताण किंवा अस्वस्थता जाणवते, तेव्हा स्वतःला शांत करण्यासाठी तुम्ही काय करता?",
-      "सध्या तुम्ही कुटुंब किंवा मित्रांशी किती जोडलेले आहात असे वाटते?",
-      "दिवसभरात साधारणपणे तुम्हाला कसे वाटते — उत्साही की खूप थकलेले?",
-    ],
-    closing: "तुमच्या भावना मनमोकळेपणाने व्यक्त केल्याबद्दल मनापासून धन्यवाद. आता आपण तुमच्या अहवालाकडे वळूया.",
-  },
-};
-
-function buildFallbackReply(history, langCode = "en") {
-  const assistantTurns = (history || []).filter((m) => m.role === "assistant").length;
-  const langKey = langCode.startsWith("hi") ? "hi" : langCode.startsWith("mr") ? "mr" : "en";
-  const pack = FALLBACKS[langKey] || FALLBACKS.en;
-
-  if (assistantTurns >= MAX_TURNS) {
-    return { reply: pack.closing, mood_tag: "calm", continue_interview: false };
-  }
-  const question = pack.questions[(assistantTurns - 1 + pack.questions.length) % pack.questions.length];
-  return { reply: question, mood_tag: "neutral", continue_interview: true };
-}
 
 function parseAndValidate(rawText) {
   if (!rawText || typeof rawText !== "string") throw new Error("Empty model response");
@@ -85,7 +38,103 @@ function parseAndValidate(rawText) {
   };
 }
 
-async function callGeminiFallback(geminiKey, systemPrompt, history, signal) {
+function generateDynamicFallback(history, langCode = "en") {
+  const lastUserMsg = (history || []).slice().reverse().find((m) => m.role === "user")?.content || "";
+  const assistantTurns = (history || []).filter((m) => m.role === "assistant").length;
+
+  const isHindi = langCode.includes("hi");
+  const isMarathi = langCode.includes("mr");
+
+  if (assistantTurns >= MAX_TURNS) {
+    if (isHindi)
+      return {
+        reply: "अपने मन की बात साझा करने के लिए बहुत-बहुत धन्यवाद। अब हम आपकी रिपोर्ट की ओर बढ़ते हैं।",
+        mood_tag: "calm",
+        continue_interview: false,
+      };
+    if (isMarathi)
+      return {
+        reply: "तुमच्या भावना मनमोकळेपणाने व्यक्त केल्याबद्दल मनापासून धन्यवाद. आता आपण तुमच्या अहवालाकडे वळूया.",
+        mood_tag: "calm",
+        continue_interview: false,
+      };
+    return {
+      reply: "Thank you so much for sharing that with me. Let's look at your report.",
+      mood_tag: "calm",
+      continue_interview: false,
+    };
+  }
+
+  // Dynamic, context-aware fallback response based on user's exact prior words
+  if (isHindi) {
+    const snippet = lastUserMsg ? lastUserMsg.slice(0, 35) : "आपकी बात";
+    const reply = lastUserMsg
+      ? `मैं आपकी बात समझ पा रहा हूँ कि '${snippet}' आपके मन को प्रभावित कर रहा है। इसके बारे में आपको कैसा महसूस होता है?`
+      : "आप इस समय कैसा महसूस कर रहे हैं?";
+    return { reply, mood_tag: "empathetic", continue_interview: true };
+  }
+
+  if (isMarathi) {
+    const snippet = lastUserMsg ? lastUserMsg.slice(0, 35) : "तुमची गोष्ट";
+    const reply = lastUserMsg
+      ? `मला समजतंय की '${snippet}' मुळे तुम्हाला अस्वस्थ वाटत आहे. याबद्दल अधिक सांगू शकाल का?`
+      : "तुम्हाला सध्या कसे वाटत आहे?";
+    return { reply, mood_tag: "empathetic", continue_interview: true };
+  }
+
+  const snippet = lastUserMsg ? lastUserMsg.slice(0, 35) : "what you shared";
+  const reply = lastUserMsg
+    ? `I hear you sharing that '${snippet}' is weighing on you. How has this been affecting your daily peace of mind?`
+    : "How have you been feeling overall lately?";
+  return { reply, mood_tag: "empathetic", continue_interview: true };
+}
+
+async function callGroqWithRetry(gModel, messages, groqKey, tStart) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5500);
+    try {
+      const res = await fetch(GROQ_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${groqKey}`,
+        },
+        body: JSON.stringify({
+          model: gModel,
+          messages,
+          max_tokens: MAX_TOKENS,
+          temperature: 0.5,
+          response_format: { type: "json_object" },
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        const content = data.choices?.[0]?.message?.content;
+        return parseAndValidate(content);
+      }
+
+      if (res.status === 429 && attempt === 0) {
+        console.warn(`[MindCare Interview API] Groq 429 rate limit on ${gModel}, backing off 700ms...`);
+        await new Promise((r) => setTimeout(r, 700));
+        continue;
+      }
+
+      console.warn(`[MindCare Interview API] Groq model ${gModel} returned HTTP ${res.status}`);
+      break;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      console.warn(`[MindCare Interview API] Groq model ${gModel} attempt ${attempt} notice:`, err.message);
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 300));
+    }
+  }
+  return null;
+}
+
+async function callGeminiFallback(geminiKey, systemPrompt, history) {
   const contents = [
     {
       role: "user",
@@ -98,6 +147,8 @@ async function callGeminiFallback(geminiKey, systemPrompt, history, signal) {
   ];
 
   for (const model of GEMINI_MODELS) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
       const res = await fetch(url, {
@@ -107,13 +158,14 @@ async function callGeminiFallback(geminiKey, systemPrompt, history, signal) {
           contents,
           generationConfig: {
             responseMimeType: "application/json",
-            maxOutputTokens: 250,
+            maxOutputTokens: 500,
             temperature: 0.5,
           },
         }),
-        signal,
+        signal: controller.signal,
       });
 
+      clearTimeout(timeoutId);
       if (res.ok) {
         const data = await res.json();
         const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("");
@@ -121,9 +173,12 @@ async function callGeminiFallback(geminiKey, systemPrompt, history, signal) {
           const parsed = parseAndValidate(text);
           return { ...parsed, _provider: `gemini_fallback (${model})` };
         }
+      } else {
+        console.warn(`[Gemini Fallback ${model}] returned HTTP ${res.status}`);
       }
     } catch (err) {
-      console.warn(`[Gemini Fallback ${model}] error:`, err.message);
+      clearTimeout(timeoutId);
+      console.warn(`[Gemini Fallback ${model}] notice:`, err.message);
     }
   }
 
@@ -176,104 +231,89 @@ export async function POST(request) {
   const geminiFallbackKey = process.env.GEMINI_API_KEY_REPORTCHAT || process.env.GEMINI_API_KEY_SOCIAL;
 
   if (!groqKey && !geminiFallbackKey) {
-    return Response.json(buildFallbackReply(history, langCode));
+    return Response.json(generateDynamicFallback(history, langCode));
   }
 
-  // Build condensed, targeted system prompt
+  // Keep token footprint slim by using the most recent 4 messages for follow-up context
+  const condensedHistory = history.length > 4 ? history.slice(-4) : history;
+  const currentTurn = userAnswers.length + 1;
+
+  // Build condensed, targeted system prompt with strict language lock & turn awareness
   let system = SYSTEM_PROMPT_CORE;
   if (name) system += `\nPerson's name: ${name}.`;
   if (faceEmotion) system += `\nCurrent webcam facial expression: ${faceEmotion}.`;
 
-  if (isHindi) {
-    system += `\nLANGUAGE REQUIREMENT: Respond EXCLUSIVELY in natural, clean Devanagari Hindi (हिन्दी). Do NOT output English or Roman letters in 'reply'. Keep 'mood_tag' in English.`;
-  } else if (isMarathi) {
-    system += `\nLANGUAGE REQUIREMENT: Respond EXCLUSIVELY in natural, warm Devanagari Marathi (मराठी). Do NOT output English or Roman letters in 'reply'. Keep 'mood_tag' in English.`;
+  if (currentTurn >= MAX_TURNS) {
+    system += `\nTHIS IS TURN ${currentTurn} OF ${MAX_TURNS} (FINAL WRAP-UP TURN). Give a short warm closing in 1 concise sentence (max 25 words). Do NOT ask any follow-up question, and set continue_interview to false.`;
   } else {
-    system += `\nLANGUAGE REQUIREMENT: Respond in clear, empathetic English.`;
+    system += `\nTHIS IS TURN ${currentTurn} OF ${MAX_TURNS}. First acknowledge what they specifically shared with genuine empathy, then ask exactly ONE relevant follow-up question based directly on their answer. Set continue_interview to true.`;
+  }
+
+  if (isHindi) {
+    system += `\nCRITICAL LANGUAGE LOCK: Respond 100% EXCLUSIVELY in natural, empathetic Devanagari Hindi script (हिन्दी). Do NOT output English or Roman letters in 'reply'. First acknowledge what the user said in Hindi, then ask ONE new follow-up question in Hindi. Keep 'mood_tag' in English.`;
+  } else if (isMarathi) {
+    system += `\nCRITICAL LANGUAGE LOCK: Respond 100% EXCLUSIVELY in natural, warm Devanagari Marathi script (मराठी). Do NOT output English or Roman letters in 'reply'. First acknowledge what the user said in Marathi, then ask ONE new follow-up question in Marathi. Keep 'mood_tag' in English.`;
+  } else {
+    system += `\nCRITICAL LANGUAGE LOCK: Respond in clear, empathetic English. First acknowledge what the user specifically said with genuine empathy, then ask ONE new follow-up question in English based directly on their response.`;
   }
 
   const messages = [
     { role: "system", content: system },
-    ...history.map((m) => ({
+    ...condensedHistory.map((m) => ({
       role: m.role === "assistant" ? "assistant" : "user",
       content: String(m.content || ""),
     })),
   ];
 
-  const abortController = new AbortController();
-  const timeoutId = setTimeout(() => abortController.abort(), REQUEST_TIMEOUT_MS);
-
-  // 1. Primary Attempt: Groq LPU (Sub-second speed)
+  // 1. Primary Attempt: Groq LPU with independent per-model timeouts and backoff retry
   if (groqKey) {
-    try {
-      const res = await fetch(GROQ_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${groqKey}`,
-        },
-        body: JSON.stringify({
-          model: GROQ_MODEL,
-          messages,
-          max_tokens: MAX_TOKENS,
-          temperature: 0.5,
-          response_format: { type: "json_object" },
-        }),
-        signal: abortController.signal,
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const content = data.choices?.[0]?.message?.content;
-        const parsed = parseAndValidate(content);
-        clearTimeout(timeoutId);
+    for (const gModel of GROQ_MODELS) {
+      const parsed = await callGroqWithRetry(gModel, messages, groqKey, tStart);
+      if (parsed) {
         const latency = Date.now() - tStart;
-        console.log(`[MindCare Interview API] Success via Groq in ${latency}ms`);
+        console.log(
+          `[MindCare Interview API] Success via Groq (${gModel}) on turn ${currentTurn} in ${latency}ms:`,
+          parsed.reply
+        );
         return Response.json({
           reply: parsed.reply,
           mood_tag: parsed.mood_tag,
-          continue_interview: parsed.continue_interview,
+          continue_interview: currentTurn >= MAX_TURNS ? false : parsed.continue_interview,
           _latencyMs: latency,
-          _provider: "groq",
+          _provider: `groq (${gModel})`,
         });
-      } else {
-        console.warn(`[MindCare Interview API] Groq HTTP ${res.status}, engaging Gemini fallback`);
       }
-    } catch (err) {
-      console.warn(`[MindCare Interview API] Groq call failed (${err.message}), engaging Gemini fallback`);
     }
   }
 
-  // 2. Fallback Chain: Gemini API (if Groq fails or rate-limits)
+  // 2. Fallback Chain: Gemini API with fresh per-request controller
   if (geminiFallbackKey) {
     try {
-      const fallbackResult = await callGeminiFallback(
-        geminiFallbackKey,
-        system,
-        history,
-        abortController.signal
-      );
-      clearTimeout(timeoutId);
+      const fallbackResult = await callGeminiFallback(geminiFallbackKey, system, condensedHistory);
       const latency = Date.now() - tStart;
-      console.log(`[MindCare Interview API] Success via Gemini Fallback in ${latency}ms`);
+      console.log(
+        `[MindCare Interview API] Success via Gemini Fallback on turn ${currentTurn} in ${latency}ms:`,
+        fallbackResult.reply
+      );
       return Response.json({
         reply: fallbackResult.reply,
         mood_tag: fallbackResult.mood_tag,
-        continue_interview: fallbackResult.continue_interview,
+        continue_interview: currentTurn >= MAX_TURNS ? false : fallbackResult.continue_interview,
         _latencyMs: latency,
         _provider: fallbackResult._provider,
       });
     } catch (fallbackErr) {
-      console.warn(`[MindCare Interview API] Gemini fallback failed:`, fallbackErr.message);
+      console.warn(`[MindCare Interview API] Gemini fallback notice:`, fallbackErr.message);
     }
   }
 
-  clearTimeout(timeoutId);
   const latency = Date.now() - tStart;
-  console.warn(`[MindCare Interview API] Returning localized clinical safety reply after ${latency}ms`);
+  console.warn(`[MindCare Interview API] Returning localized dynamic safety reply after ${latency}ms`);
+  const safeFallback = generateDynamicFallback(history, langCode);
+  if (currentTurn >= MAX_TURNS) safeFallback.continue_interview = false;
   return Response.json({
-    ...buildFallbackReply(history, langCode),
-    _provider: "clinical_fallback",
+    ...safeFallback,
+    _provider: "dynamic_fallback",
     _latencyMs: latency,
   });
 }

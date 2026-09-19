@@ -81,7 +81,15 @@ export function useSpeechRecognition() {
 
     rec.onend = () => {
       if (stopped || !activeRef.current) return;
-      // If stopped due to natural silence, trigger onFinal
+      if (!finalText.trim()) {
+        // Safe restart if no speech was captured yet
+        setTimeout(() => {
+          if (activeRef.current && !stopped) {
+            try { rec.start(); } catch {}
+          }
+        }, 150);
+        return;
+      }
       stopped = true;
       clearTimeout(silenceTimer);
       onFinal?.(finalText.trim());
@@ -92,7 +100,6 @@ export function useSpeechRecognition() {
       rec.start();
     } catch (startErr) {
       console.warn("[useSpeechRecognition] Start error:", startErr);
-      onFinal?.("");
     }
 
     return () => {
