@@ -70,9 +70,10 @@ export const DEFAULT_SOCIAL_PLATFORMS: SocialPlatform[] = [
   },
 ];
 
-// Target question count for the adaptive AI interview (shown as progress
-// estimate in the UI) — the model has discretion to land on 5 or 6.
-export const TARGET_INTERVIEW_QUESTIONS = 6;
+// Minimum duration for the clinical interview: 5 minutes (300 seconds)
+export const MINIMUM_INTERVIEW_DURATION_SEC = 300;
+// Baseline estimated question turns (adaptive conversation can take any number of turns)
+export const TARGET_INTERVIEW_QUESTIONS = 10;
 
 // Hardcoded first turn of the adaptive interview — asked instantly with no
 // API latency, and guarantees age is always established before the
@@ -98,46 +99,69 @@ export function buildInterviewOpener(name?: string, lang?: string): string {
 export const FALLBACK_QUESTION_SETS: Record<string, { questions: string[]; closing: string }> = {
   en: {
     questions: [
-      "How have you been sleeping lately — restful, or more restless than usual?",
-      "What's something that has been on your mind a lot this past week?",
-      "When things feel stressful or overwhelming, what do you usually do to cope?",
-      "How connected do you feel to friends, family, or people around you right now?",
-      "On a typical day lately, do you feel more energized or emotionally drained?",
+      "How have you been sleeping lately — do you wake up feeling rested, or more exhausted than usual?",
+      "On a typical day, how would you describe your overall energy and motivation levels?",
+      "What has been the biggest source of stress or mental pressure in your life recently?",
+      "When anxiety or overwhelming thoughts arise, how easily are you able to calm your mind?",
+      "Have you noticed a loss of interest or joy in things and hobbies you normally enjoy doing?",
+      "How connected do you feel with friends, family, or people in your life right now?",
+      "When things get tough emotionally, what coping mechanisms or habits do you usually rely on?",
+      "How would you describe your inner self-talk — is it generally supportive, or quite harsh and self-critical?",
+      "Do you ever experience physical symptoms when stressed, such as headaches, racing heart, or muscle tightness?",
+      "How has your appetite or relationship with food and nutrition felt over the past few weeks?",
+      "Are there particular times of day or specific triggers when you feel your mood dips the most?",
+      "Looking ahead at the near future, do you feel a sense of hope and optimism, or uncertainty and dread?",
     ],
-    closing: "Thank you so much for sharing that with me. That's everything I need for now. Let's look at your report.",
+    closing: "Thank you so much for opening up and sharing so authentically with me. That provides valuable insight for your report. Let's look at your clinical summary now.",
   },
   hi: {
     questions: [
-      "हाल ही में आपकी नींद कैसी रही है — क्या आपको आराम मिल रहा है, या बेचैनी रहती है?",
-      "इस पिछले हफ्ते ऐसी कौन सी बात है जो आपके मन में सबसे ज्यादा चल रही है?",
-      "जब तनाव या चिंता महसूस होती है, तो खुद को शांत करने के लिए आप क्या करते हैं?",
-      "आजकल आप अपने दोस्तों या परिवार के साथ कितना जुड़ाव महसूस करते हैं?",
-      "आमतौर पर दिनभर में आप कैसा महसूस करते हैं — ऊर्जावान या थका हुआ?",
+      "हाल ही में आपकी नींद कैसी रही है — क्या सुबह उठकर तरोताजा महसूस होता है, या थकान बनी रहती है?",
+      "आमतौर पर दिनभर में आपकी ऊर्जा और काम करने की प्रेरणा का स्तर कैसा रहता है?",
+      "हाल के दिनों में आपके जीवन में तनाव या मानसिक दबाव का सबसे बड़ा कारण क्या रहा है?",
+      "जब चिंता या परेशान करने वाले विचार आते हैं, तो अपने मन को शांत करना कितना आसान या मुश्किल लगता है?",
+      "क्या आपने उन कामों या शौक में दिलचस्पी कम होते देखी है जो आपको पहले पसंद थे?",
+      "आजकल आप अपने दोस्तों, परिवार या करीबी लोगों के साथ कितना जुड़ाव या अकेलापन महसूस करते हैं?",
+      "जब भावनात्मक रूप से मुश्किल समय आता है, तो खुद को संभालने के लिए आप किन आदतों या तरीकों का सहारा लेते हैं?",
+      "आप अपने खुद के बारे में कैसा सोचते हैं — क्या आप खुद के प्रति दयालु हैं या अक्सर खुद की आलोचना करते हैं?",
+      "तनाव के समय क्या आपको सिरदर्द, सीने में भारीपन या मांसपेशियों में खिंचाव जैसे शारीरिक लक्षण महसूस होते हैं?",
+      "पिछले कुछ हफ्तों में आपकी भूख और खान-पान की दिनचर्या में कोई बदलाव आया है क्या?",
+      "क्या दिन का कोई खास समय होता है जब आपका मूड सबसे ज्यादा उदास या परेशान रहता है?",
+      "आने वाले समय को देखते हुए, क्या आपको उम्मीद और सकारात्मकता महसूस होती है, या अनिश्चितता और घबराहट?",
     ],
-    closing: "अपने मन की बात साझा करने के लिए बहुत-बहुत धन्यवाद। अब हम आपकी रिपोर्ट की ओर बढ़ते हैं।",
+    closing: "अपने मन की बात इतनी ईमानदारी से साझा करने के लिए बहुत-बहुत धन्यवाद। इससे हमें आपके मानसिक स्वास्थ्य को समझने में बहुत मदद मिली है। अब हम आपकी रिपोर्ट की ओर बढ़ते हैं।",
   },
   mr: {
     questions: [
-      "अलीकडच्या काळात तुमची झोप कशी आहे — शांत झोप लागते की अस्वस्थता वाटते?",
-      "गेल्या आठवड्यात अशी कोणती गोष्ट आहे जी तुमच्या मनात वारंवार येत आहे?",
-      "जेव्हा ताण किंवा अस्वस्थता जाणवते, तेव्हा स्वतःला शांत करण्यासाठी तुम्ही काय करता?",
-      "सध्या तुम्ही कुटुंब किंवा मित्रांशी किती जोडलेले आहात असे वाटते?",
-      "दिवसभरात साधारणपणे तुम्हाला कसे वाटते — उत्साही की खूप थकलेले?",
+      "अलीकडच्या काळात तुमची झोप कशी आहे — सकाळी उठल्यावर ताजेतवाने वाटते की दिवसभर थकवा जाणवतो?",
+      "साधारणपणे दिवसभरात तुमची ऊर्जा आणि काम करण्याचा उत्साह कसा असतो?",
+      "गेल्या काही दिवसांत तुमच्या आयुष्यात तणाव किंवा मानसिक त्रासाचे मुख्य कारण काय राहिले आहे?",
+      "जेव्हा अस्वस्थता किंवा नकारात्मक विचार मनात येतात, तेव्हा मन शांत करणे तुम्हाला किती सोपे किंवा कठीण जाते?",
+      "पूर्वी आवडणाऱ्या गोष्टी किंवा छंदांमध्ये सध्या तुमचा रस किंवा आनंद कमी झाल्यासारखा वाटतो का?",
+      "सध्या तुम्ही कुटुंब, मित्र किंवा जवळच्या व्यक्तींशी किती जोडलेले आहात की एकटेपणा जाणवतो?",
+      "जेव्हा भावनिकदृष्ट्या कठीण वेळ येते, तेव्हा स्वतःला सावरण्यासाठी तुम्ही कोणत्या पद्धतींचा वापर करता?",
+      "स्वतःबद्दल तुमचे विचार कसे असतात — तुम्ही स्वतःला आधार देता की जास्त दोष देता?",
+      "तणावाच्या वेळी डोकेदुखी, छातीत धडधडणे किंवा स्नायूंमध्ये ताण अशी शारीरिक लक्षणे जाणवतात का?",
+      "गेल्या काही आठवड्यांत तुमची भूक आणि खाण्यापिण्याच्या सवयींमध्ये काही बदल जाणवला आहे का?",
+      "दिवसातील अशी कोणती वेळ आहे का जेव्हा मन जास्त उदास किंवा अस्वस्थ होते?",
+      "भविष्याकडे पाहताना तुम्हाला आशा आणि सकारात्मकता वाटते की भीती आणि अनिश्चितता?",
     ],
-    closing: "तुमच्या भावना मनमोकळेपणाने व्यक्त केल्याबद्दल मनापासून धन्यवाद. आता आपण तुमच्या अहवालाकडे वळूया.",
+    closing: "तुमच्या भावना इतक्या मोकळेपणाने मांडल्याबद्दल मनापासून धन्यवाद. तुमच्या मानसिक स्थितीचे अचूक विश्लेषण करण्यास यामुळे मोठी मदत झाली आहे. आता आपण तुमच्या सविस्तर अहवालाकडे वळूया.",
   },
 };
 
 export function getOfflineFallbackTurn(
   history: Array<{ role: string; content: string }>,
-  lang?: string
+  lang?: string,
+  elapsedSeconds: number = 0
 ): { reply: string; continue_interview: boolean } {
   const l = String(lang || 'en').toLowerCase();
   const key = l.startsWith('hi') ? 'hi' : l.startsWith('mr') ? 'mr' : 'en';
   const pack = FALLBACK_QUESTION_SETS[key] || FALLBACK_QUESTION_SETS.en;
   const assistantTurns = (history || []).filter((m) => m.role === 'assistant').length;
 
-  if (assistantTurns >= 6) {
+  // Only close if 5 minutes (300 seconds) have elapsed AND at least 10 turns completed
+  if (elapsedSeconds >= MINIMUM_INTERVIEW_DURATION_SEC && assistantTurns >= 10) {
     return { reply: pack.closing, continue_interview: false };
   }
   const qIndex = Math.max(0, assistantTurns - 1) % pack.questions.length;

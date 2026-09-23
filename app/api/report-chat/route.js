@@ -3,6 +3,9 @@
 // Answers patient and clinician questions based on the SHAP report JSON.
 // OpenRouter has been completely removed.
 
+import fs from 'node:fs';
+import path from 'node:path';
+
 const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-3.6-flash", "gemini-flash-latest"];
 const GROQ_MODELS = ["qwen/qwen3.8-27b", "openai/gpt-oss-20b"];
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
@@ -65,7 +68,7 @@ export async function POST(request) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { report, question, history } = body || {};
+  const { report, question, history, context, assessmentContext } = body || {};
   if (!report || typeof question !== "string" || !question.trim()) {
     return Response.json(
       { error: "report and a non-empty question are required" },
@@ -84,7 +87,19 @@ export async function POST(request) {
     });
   }
 
-  const systemText = `${SYSTEM_PROMPT}\n\nREPORT DATA (JSON):\n${JSON.stringify(report)}`;
+  let systemText = `${SYSTEM_PROMPT}\n\nREPORT DATA (JSON):\n${JSON.stringify(report)}`;
+  const richContext = context || assessmentContext;
+  if (richContext) {
+    systemText += `\n\nDETAILED MULTIMODAL ASSESSMENT CONTEXT (DIALOGUE & BIOMETRIC TELEMETRY):\n${JSON.stringify(richContext)}`;
+  } else {
+    try {
+      const latestPath = path.join(process.cwd(), 'data', 'contexts', 'latest_assessment_context.json');
+      if (fs.existsSync(latestPath)) {
+        const fileContent = fs.readFileSync(latestPath, 'utf-8');
+        systemText += `\n\nDETAILED MULTIMODAL ASSESSMENT CONTEXT (DIALOGUE & BIOMETRIC TELEMETRY):\n${fileContent}`;
+      }
+    } catch (e) {}
+  }
 
   // Convert history to Gemini contents format
   const geminiContents = [];

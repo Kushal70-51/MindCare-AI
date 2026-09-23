@@ -138,6 +138,7 @@ export interface MentalHealthReport {
   retrievedEvidence: RetrievedEvidenceItem[];
   recommendations: ClinicalRecommendation[];
   medicalReferences: MedicalReference[];
+  behavioralSummary?: Record<string, string>;
 }
 
 export type ScreenId =

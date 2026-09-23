@@ -2,7 +2,6 @@
 
 import React from 'react';
 import { useApp } from '../../context/AppContext';
-import { TARGET_INTERVIEW_QUESTIONS } from '../../utils/mockData';
 import { Brain, Play, Clock, CheckCircle2, ShieldCheck, Sparkles, FileText, ClipboardList, Mic } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -10,8 +9,7 @@ export const DashboardScreen: React.FC = () => {
   const { setScreen, user, answers } = useApp();
 
   const completedCount = answers.length;
-  const totalQuestions = TARGET_INTERVIEW_QUESTIONS;
-  const progressPercent = Math.round((completedCount / totalQuestions) * 100);
+  const progressPercent = completedCount > 0 ? 100 : 10;
 
   const domains = [
     { name: 'Depression & Anxiety (PHQ-9 / GAD-7)', status: 'Validated Screener', icon: ClipboardList },

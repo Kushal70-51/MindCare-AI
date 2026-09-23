@@ -89,7 +89,11 @@ interface AppContextType {
   instagramAnalysisError: string | null;
   analyzeInstagramExportFile: (file: File) => Promise<void>;
   currentAiQuestion: string;
+  streamingAiText: string;
+  assessmentContext: any | null;
   interviewTurnNumber: number;
+  interviewDurationSec: number;
+  concludeInterview: () => void;
   interviewLoading: boolean;
   interviewComplete: boolean;
   startInterview: (lang?: string) => void;
@@ -97,6 +101,8 @@ interface AppContextType {
   recordAnswer: (answerText: string, language?: string) => void;
   resetAssessment: () => void;
   report: MentalHealthReport;
+  reportGenerating: boolean;
+  generateReportFromContext: (customContext?: any) => Promise<void>;
   faceEmotionSamples: FacialEmotionSample[];
   currentFaceEmotion: FacialEmotionSample | null;
   recordFaceEmotion: (reading: FaceEmotionReading) => void;
@@ -252,11 +258,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [interviewMessages, setInterviewMessages] = useState<InterviewMessage[]>([]);
   const interviewMessagesRef = React.useRef<InterviewMessage[]>([]);
   const [currentAiQuestion, setCurrentAiQuestion] = useState<string>('');
+  const [streamingAiText, setStreamingAiText] = useState<string>('');
+  const [assessmentContext, setAssessmentContext] = useState<any | null>(null);
+  const sessionIdRef = React.useRef<string>(`session_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
   const [interviewTurnNumber, setInterviewTurnNumber] = useState<number>(0);
+  const [interviewDurationSec, setInterviewDurationSec] = useState<number>(0);
+  const interviewStartTimeRef = React.useRef<number | null>(null);
   const [interviewLoading, setInterviewLoading] = useState<boolean>(false);
   const [interviewComplete, setInterviewComplete] = useState<boolean>(false);
   const [answers, setAnswers] = useState<AssessmentAnswer[]>([]);
-  const [report, setReport] = useState<MentalHealthReport>(INITIAL_REPORT);
+  const [report, setReport] = useState<MentalHealthReport>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = window.localStorage.getItem('mindcare_latest_report');
+        if (saved) return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return INITIAL_REPORT;
+  });
+  const [reportGenerating, setReportGenerating] = useState<boolean>(false);
+  const hasSynthesizedRef = React.useRef<boolean>(false);
   const [faceEmotionSamples, setFaceEmotionSamples] = useState<FacialEmotionSample[]>([]);
   const [voiceEmotionSamples, setVoiceEmotionSamples] = useState<VoiceEmotionSample[]>([]);
   const [screenerResponses, setScreenerResponses] = useState<Record<string, number>>({});
@@ -325,6 +346,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
+
+  // Active assessment session timer tracking duration (min 5 minutes target)
+  useEffect(() => {
+    if (screen !== 'assessment' || interviewComplete) return;
+    if (!interviewStartTimeRef.current) {
+      interviewStartTimeRef.current = Date.now();
+    }
+    const interval = setInterval(() => {
+      if (interviewStartTimeRef.current) {
+        const secs = Math.floor((Date.now() - interviewStartTimeRef.current) / 1000);
+        setInterviewDurationSec(secs);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [screen, interviewComplete]);
 
   // Persisted so the patient's chat/video-call widget survives a page
   // refresh — it previously lived in plain React state and vanished on
@@ -760,6 +796,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setInterviewMessages(initial);
     setCurrentAiQuestion(opener);
     setInterviewTurnNumber(1);
+    interviewStartTimeRef.current = Date.now();
+    setInterviewDurationSec(0);
     setInterviewComplete(false);
     setInterviewLoading(false);
   };
@@ -770,6 +808,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const recordAnswer = (answerText: string, language?: string) => {
     triggerCrisisCheck(answerText);
     const turnNumber = interviewTurnNumber;
+    // Calculate elapsed duration since consultation start
+    const elapsedSeconds = Math.floor((Date.now() - (interviewStartTimeRef.current || Date.now())) / 1000);
+
     // Provisional sentiment shown instantly; the real pretrained-model
     // classification below patches it in once inference resolves (typically
     // a few hundred ms), so navigation never blocks on it.
@@ -815,31 +856,108 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     interviewMessagesRef.current = historyWithAnswer;
     setInterviewMessages(historyWithAnswer);
     setInterviewLoading(true);
+    setStreamingAiText('');
 
-    const INTERVIEW_TIMEOUT_MS = 15000;
+    const INTERVIEW_TIMEOUT_MS = 20000;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), INTERVIEW_TIMEOUT_MS);
     const targetLang = language || 'en-IN';
     const reqStart = Date.now();
 
-    console.log(`[MindCare Interview API] Dispatching turn ${turnNumber} (lang: ${targetLang})...`);
+    console.log(`[MindCare Interview SSE] Dispatching turn ${turnNumber} (${elapsedSeconds}s, lang: ${targetLang})...`);
 
     fetch('/api/interview', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream, application/json',
+      },
       body: JSON.stringify({
         history: historyWithAnswer,
         name: user.fullName,
         faceEmotion: currentFaceEmotion?.dominantEmotion,
         language: targetLang,
+        stream: true,
+        elapsedSeconds,
       }),
       signal: controller.signal,
     })
-      .then((res) => {
+      .then(async (res) => {
         if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-        return res.json();
-      })
-      .then((data: { reply: string; mood_tag?: string; continue_interview: boolean }) => {
+        const contentType = res.headers.get('content-type') || '';
+
+        // 1. Process Server-Sent Events (SSE) Stream
+        if (contentType.includes('text/event-stream') && res.body) {
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let accumulatedSpokenText = '';
+          let finalPayload: { reply?: string; mood_tag?: string; continue_interview?: boolean } | null = null;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed.startsWith('data:')) continue;
+              const jsonStr = trimmed.slice(5).trim();
+              if (!jsonStr) continue;
+
+              try {
+                const eventData = JSON.parse(jsonStr);
+                if (eventData.type === 'token' && typeof eventData.token === 'string') {
+                  accumulatedSpokenText += eventData.token;
+                  setStreamingAiText(accumulatedSpokenText);
+                } else if (eventData.type === 'done') {
+                  finalPayload = eventData;
+                }
+              } catch (e) {}
+            }
+          }
+
+          clearTimeout(timeoutId);
+
+          const finalReply = (finalPayload?.reply || accumulatedSpokenText).trim();
+          const continueInterview = finalPayload?.continue_interview !== false;
+          const moodTag = finalPayload?.mood_tag || 'neutral';
+
+          console.log(
+            `[MindCare Interview SSE] Turn ${turnNumber} finalized in ${Date.now() - reqStart}ms:`,
+            finalReply
+          );
+
+          const updatedHistory: InterviewMessage[] = [
+            ...interviewMessagesRef.current,
+            { role: 'assistant', content: finalReply },
+          ];
+          interviewMessagesRef.current = updatedHistory;
+          setInterviewMessages(updatedHistory);
+          setCurrentAiQuestion(finalReply);
+          setStreamingAiText('');
+          setInterviewTurnNumber((prev) => prev + 1);
+          setInterviewComplete(!continueInterview);
+          setInterviewLoading(false);
+
+          if (moodTag) {
+            const capitalized = (moodTag.charAt(0).toUpperCase() + moodTag.slice(1)) as any;
+            setAnswers((prev) =>
+              prev.map((a) =>
+                a.questionId === turnNumber && a.sentiment === 'Neutral'
+                  ? { ...a, sentiment: capitalized }
+                  : a
+              )
+            );
+          }
+          return;
+        }
+
+        // 2. Process Standard JSON Response (Fallback)
+        const data = await res.json();
         clearTimeout(timeoutId);
         console.log(`[MindCare Interview API] Turn ${turnNumber} received in ${Date.now() - reqStart}ms:`, data.reply);
         const updatedHistory: InterviewMessage[] = [
@@ -849,6 +967,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         interviewMessagesRef.current = updatedHistory;
         setInterviewMessages(updatedHistory);
         setCurrentAiQuestion(data.reply);
+        setStreamingAiText('');
         setInterviewTurnNumber((prev) => prev + 1);
         setInterviewComplete(!data.continue_interview);
         setInterviewLoading(false);
@@ -866,7 +985,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       .catch((err) => {
         clearTimeout(timeoutId);
         console.warn(`[MindCare Interview API] Turn ${turnNumber} network notice (${err?.message}), switching seamlessly to clinical fallback...`);
-        const fallback = getOfflineFallbackTurn(historyWithAnswer, targetLang);
+        const fallback = getOfflineFallbackTurn(historyWithAnswer, targetLang, elapsedSeconds);
         const fallbackHistory: InterviewMessage[] = [
           ...interviewMessagesRef.current,
           { role: 'assistant', content: fallback.reply },
@@ -874,16 +993,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         interviewMessagesRef.current = fallbackHistory;
         setInterviewMessages(fallbackHistory);
         setCurrentAiQuestion(fallback.reply);
+        setStreamingAiText('');
         setInterviewTurnNumber((prev) => prev + 1);
         setInterviewComplete(!fallback.continue_interview);
         setInterviewLoading(false);
       });
   };
 
+  const concludeInterview = () => {
+    setInterviewComplete(true);
+    setScreen('completed');
+  };
+
   const resetAssessment = () => {
+    sessionIdRef.current = `session_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    interviewStartTimeRef.current = null;
+    setInterviewDurationSec(0);
     interviewMessagesRef.current = [];
     setInterviewMessages([]);
     setCurrentAiQuestion('');
+    setStreamingAiText('');
+    setAssessmentContext(null);
     setInterviewTurnNumber(0);
     setInterviewLoading(false);
     setInterviewComplete(false);
@@ -894,6 +1024,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setCrisisEverFlagged(false);
     setSharedDoctor(null);
     historySavedRef.current = false;
+    hasSynthesizedRef.current = false;
+    setReportGenerating(false);
     socialAutoFetchedRef.current = false;
     setScreen('dashboard');
   };
@@ -1210,6 +1342,88 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           });
         }
 
+        // Persist complete Multimodal Assessment Context file for report synthesis
+        try {
+          const ageAnswer = answers.find((a) => a.questionId === 1)?.userResponseText || 'Unspecified';
+          const dialogueTurns = answers.map((ans) => ({
+            turn: ans.questionId,
+            question: ans.questionText,
+            answer: ans.userResponseText,
+            sentiment: ans.sentiment,
+            facialEmotion: ans.facialEmotion || 'neutral',
+            acousticEmotion: ans.acousticEmotion || 'NEUTRAL',
+            linguisticEmotion: ans.linguisticEmotion || 'neutral',
+            speechDurationSec: ans.speechDurationSec,
+          }));
+
+          const contextObj = {
+            sessionId: sessionIdRef.current,
+            savedAt: new Date().toISOString(),
+            user: {
+              fullName: user.fullName || 'Anonymous Patient',
+              age: ageAnswer,
+              language: (typeof window !== 'undefined' && window.localStorage.getItem('mindcare_lang')) || 'en-IN',
+            },
+            dialogue: dialogueTurns,
+            facialAnalysis: {
+              dominantEmotion: facialEvidence ? (faceEmotionSamples[0]?.dominantEmotion || 'neutral') : 'neutral',
+              totalFrames: faceEmotionSamples.length,
+            },
+            acousticAnalysis: {
+              dominantTone: acousticEvidence ? (voiceEmotionSamples[0]?.dominantEmotion || 'NEUTRAL') : 'NEUTRAL',
+              totalClips: voiceEmotionSamples.length,
+            },
+            screeners: {
+              phq9: phq9 ? { total: phq9.total, severity: phq9.severity, maxTotal: phq9.maxTotal } : null,
+              gad7: gad7 ? { total: gad7.total, severity: gad7.severity, maxTotal: gad7.maxTotal } : null,
+            },
+            crisisSafety: {
+              everFlagged: crisisEverFlagged,
+            },
+            provisionalScores: {
+              overallScore: computedOverallScore,
+              riskLevel,
+              conditions: conditions.map((c) => ({ name: c.name, score: c.score, severity: c.severity })),
+            },
+          };
+
+          setAssessmentContext(contextObj);
+          if (typeof window !== 'undefined') {
+            window.localStorage.setItem('mindcare_latest_assessment_context', JSON.stringify(contextObj));
+          }
+
+          fetch('/api/assessment/context', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(contextObj),
+          }).catch((err) => console.warn('[MindCare Context] Storage warning:', err.message));
+
+          // Asynchronous AI Clinical Report Synthesis using full multimodal context
+          if (!hasSynthesizedRef.current) {
+            hasSynthesizedRef.current = true;
+            setReportGenerating(true);
+            fetch('/api/reports/generate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ context: contextObj }),
+            })
+              .then((res) => res.json())
+              .then((data) => {
+                if (data?.success && data?.report) {
+                  setReport(data.report);
+                  if (typeof window !== 'undefined') {
+                    window.localStorage.setItem('mindcare_latest_report', JSON.stringify(data.report));
+                  }
+                  console.log('[MindCare AppContext] AI synthesized report successfully applied from assessment context!');
+                }
+              })
+              .catch((err) => console.warn('[MindCare AppContext] AI Report Synthesis notice:', err.message))
+              .finally(() => setReportGenerating(false));
+          }
+        } catch (ctxErr) {
+          console.warn('[MindCare Context] Compilation notice:', ctxErr);
+        }
+
         return {
           ...prev,
           conditions,
@@ -1223,6 +1437,30 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
     }
   }, [interviewComplete, answers, faceEmotionSamples, voiceEmotionSamples, screenerComplete, screenerResponses, crisisEverFlagged]);
+
+  const generateReportFromContext = async (customContext?: any) => {
+    const ctx = customContext || assessmentContext;
+    if (!ctx) return;
+    setReportGenerating(true);
+    try {
+      const res = await fetch('/api/reports/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ context: ctx }),
+      });
+      const data = await res.json();
+      if (data?.success && data?.report) {
+        setReport(data.report);
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem('mindcare_latest_report', JSON.stringify(data.report));
+        }
+      }
+    } catch (e: any) {
+      console.warn('[MindCare AppContext] Manual report synthesis error:', e.message);
+    } finally {
+      setReportGenerating(false);
+    }
+  };
 
   return (
     <AppContext.Provider
@@ -1266,7 +1504,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         instagramAnalysisError,
         analyzeInstagramExportFile,
         currentAiQuestion,
+        streamingAiText,
+        assessmentContext,
         interviewTurnNumber,
+        interviewDurationSec,
+        concludeInterview,
         interviewLoading,
         interviewComplete,
         startInterview,
@@ -1274,6 +1516,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         recordAnswer,
         resetAssessment,
         report,
+        reportGenerating,
+        generateReportFromContext,
         faceEmotionSamples,
         currentFaceEmotion,
         recordFaceEmotion,

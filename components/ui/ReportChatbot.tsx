@@ -47,6 +47,14 @@ export const ReportChatbot: React.FC<ReportChatbotProps> = ({ report }) => {
     setIsLoading(true);
 
     try {
+      let savedContext = null;
+      try {
+        if (typeof window !== 'undefined') {
+          const raw = window.localStorage.getItem('mindcare_latest_assessment_context');
+          if (raw) savedContext = JSON.parse(raw);
+        }
+      } catch (e) {}
+
       const res = await fetch('/api/report-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -54,6 +62,7 @@ export const ReportChatbot: React.FC<ReportChatbotProps> = ({ report }) => {
           report,
           question,
           history: messages.map((m) => ({ role: m.role, text: m.text })),
+          context: savedContext,
         }),
       });
       const data = await res.json();
