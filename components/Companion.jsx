@@ -23,6 +23,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 function AppContent() {
   const { screen, theme, highContrast, largeFont } = useApp();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const renderScreen = () => {
     switch (screen) {

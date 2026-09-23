@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { cookies } from 'next/headers';
 import getDb from '../../../../../lib/db';
 import { getDoctorFromToken, SESSION_COOKIE_NAME } from '../../../../../lib/auth';

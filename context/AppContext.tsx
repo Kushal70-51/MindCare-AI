@@ -54,8 +54,10 @@ interface AppContextType {
   setScreen: (screen: ScreenId) => void;
   user: UserProfile;
   setUser: (user: Partial<UserProfile>) => void;
-  loginUser: (email: string, name?: string) => void;
+  loginUser: (userOrEmail: any, name?: string) => void;
   logoutUser: () => void;
+  loadAssessmentHistory: () => Promise<void>;
+  loadPastReport: (entry: ReportHistoryEntry) => void;
   consent: PrivacyConsentState;
   updateConsent: (consent: Partial<PrivacyConsentState>) => void;
   socialPlatforms: SocialPlatform[];
@@ -227,7 +229,42 @@ function deriveOverallStatus(
 }
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [screen, setScreen] = useState<ScreenId>('splash');
+  const [screen, setScreenState] = useState<ScreenId>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = window.localStorage.getItem('mindcare_current_screen');
+        if (
+          saved &&
+          [
+            'splash',
+            'welcome',
+            'register',
+            'login',
+            'consent',
+            'social',
+            'dashboard',
+            'screener',
+            'assessment',
+            'completed',
+            'report',
+          ].includes(saved)
+        ) {
+          return saved as ScreenId;
+        }
+      } catch (e) {}
+    }
+    return 'welcome';
+  });
+
+  const setScreen = React.useCallback((newScreen: ScreenId) => {
+    setScreenState(newScreen);
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem('mindcare_current_screen', newScreen);
+      } catch (e) {}
+    }
+  }, []);
+
   const [user, setUserState] = useState<UserProfile>(INITIAL_USER);
   const [consent, setConsent] = useState<PrivacyConsentState>({
     privacyPolicy: true,
@@ -287,6 +324,62 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [sharedDoctor, setSharedDoctorState] = useState<{ reportId: string; doctorName: string } | null>(null);
   const historySavedRef = React.useRef(false);
   const socialAutoFetchedRef = React.useRef(false);
+  const loadAssessmentHistory = async () => {
+    try {
+      const res = await fetch('/api/user/assessments');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.history)) {
+          setReportHistory(data.history);
+          try {
+            window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(data.history));
+          } catch (e) {}
+        }
+      }
+    } catch (e) {
+      console.warn('Could not load assessment history from DB:', e);
+    }
+  };
+
+  const loadPastReport = (entry: ReportHistoryEntry) => {
+    setScreen('report');
+    let parsedReport = entry.reportJson;
+    if (typeof parsedReport === 'string') {
+      try {
+        parsedReport = JSON.parse(parsedReport);
+      } catch (e) {
+        console.error('Failed to parse reportJson string:', e);
+      }
+    }
+
+    if (parsedReport) {
+      setReport(parsedReport);
+      try {
+        window.localStorage.setItem('mindcare_latest_report', JSON.stringify(parsedReport));
+      } catch (e) {}
+      showToast(`Loaded evaluation report from ${new Date(entry.date).toLocaleDateString()}`);
+    } else if (entry.id) {
+      fetch('/api/user/assessments')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && Array.isArray(data.history)) {
+            const match = data.history.find((h: any) => h.id === entry.id);
+            let matchJson = match?.reportJson;
+            if (typeof matchJson === 'string') {
+              try { matchJson = JSON.parse(matchJson); } catch (e) {}
+            }
+            if (match && matchJson) {
+              setReport(matchJson);
+              try {
+                window.localStorage.setItem('mindcare_latest_report', JSON.stringify(matchJson));
+              } catch (e) {}
+              showToast(`Loaded evaluation report from ${new Date(entry.date).toLocaleDateString()}`);
+            }
+          }
+        })
+        .catch((err) => console.warn('Could not load past report details:', err));
+    }
+  };
 
   useEffect(() => {
     try {
@@ -295,6 +388,35 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } catch (e) {
       console.warn('Could not load report history from localStorage:', e);
     }
+
+    // Check active patient session from DB
+    fetch('/api/auth/user/me')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.authenticated && data.user) {
+          setUserState((prev) => ({
+            ...prev,
+            id: data.user.id,
+            fullName: data.user.full_name,
+            email: data.user.email,
+            avatarUrl: data.user.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
+            authProvider: data.user.auth_provider,
+            isLoggedIn: true,
+          }));
+          loadAssessmentHistory();
+          setScreenState((current) => {
+            if (['splash', 'welcome', 'login', 'register'].includes(current)) {
+              if (typeof window !== 'undefined') {
+                try { window.localStorage.setItem('mindcare_current_screen', 'dashboard'); } catch (e) {}
+              }
+              return 'dashboard';
+            }
+            return current;
+          });
+        }
+      })
+      .catch((err) => console.warn('User session check notice:', err));
+
     try {
       const storedDoctor = window.localStorage.getItem(SHARED_DOCTOR_STORAGE_KEY);
       if (storedDoctor) setSharedDoctorState(JSON.parse(storedDoctor));
@@ -398,18 +520,34 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setUserState((prev) => ({ ...prev, ...updated }));
   };
 
-  const loginUser = (email: string, name?: string) => {
-    setUserState((prev) => ({
-      ...prev,
-      email,
-      fullName: name || email.split('@')[0].replace('.', ' '),
-      isLoggedIn: true,
-    }));
-    showToast(`Welcome back, ${name || email.split('@')[0]}!`);
+  const loginUser = (userOrEmail: any, name?: string) => {
+    if (typeof userOrEmail === 'object' && userOrEmail !== null) {
+      setUserState((prev) => ({
+        ...prev,
+        id: userOrEmail.id || prev.id,
+        fullName: userOrEmail.full_name || userOrEmail.fullName || name || 'Patient User',
+        email: userOrEmail.email,
+        isLoggedIn: true,
+      }));
+      loadAssessmentHistory();
+      showToast(`Welcome back, ${userOrEmail.full_name || userOrEmail.fullName || 'User'}!`);
+    } else {
+      setUserState((prev) => ({
+        ...prev,
+        email: userOrEmail,
+        fullName: name || userOrEmail.split('@')[0].replace('.', ' '),
+        isLoggedIn: true,
+      }));
+      loadAssessmentHistory();
+      showToast(`Welcome back, ${name || userOrEmail.split('@')[0]}!`);
+    }
   };
 
-  const logoutUser = () => {
-    setUserState((prev) => ({ ...prev, isLoggedIn: false }));
+  const logoutUser = async () => {
+    try {
+      await fetch('/api/auth/user/logout', { method: 'POST' });
+    } catch (e) {}
+    setUserState(INITIAL_USER);
     setScreen('welcome');
     showToast('Logged out successfully.');
   };
@@ -1331,15 +1469,38 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             phq9Total: phq9?.total,
             gad7Total: gad7?.total,
           };
-          setReportHistory((prevHistory) => {
-            const nextHistory = [...prevHistory, entry];
-            try {
-              window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(nextHistory));
-            } catch (e) {
-              console.warn('Could not persist report history:', e);
-            }
-            return nextHistory;
-          });
+
+          if (user.isLoggedIn) {
+            fetch('/api/user/assessments', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                overallScore: computedOverallScore,
+                riskLevel,
+                phq9Total: phq9?.total,
+                gad7Total: gad7?.total,
+                report: prev,
+                answers,
+              }),
+            })
+              .then((res) => res.json())
+              .then((data) => {
+                if (data.success && data.entry) {
+                  setReportHistory((prevHistory) => [...prevHistory, data.entry]);
+                }
+              })
+              .catch((err) => console.warn('Could not persist assessment to DB:', err));
+          } else {
+            setReportHistory((prevHistory) => {
+              const nextHistory = [...prevHistory, entry];
+              try {
+                window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(nextHistory));
+              } catch (e) {
+                console.warn('Could not persist report history:', e);
+              }
+              return nextHistory;
+            });
+          }
         }
 
         // Persist complete Multimodal Assessment Context file for report synthesis
@@ -1547,6 +1708,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         toggleLargeFont,
         toastMessage,
         showToast,
+        loadAssessmentHistory,
+        loadPastReport,
       }}
     >
       {children}

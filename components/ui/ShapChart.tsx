@@ -10,7 +10,8 @@ interface ShapChartProps {
 }
 
 export const ShapChart: React.FC<ShapChartProps> = ({ features }) => {
-  const sorted = [...features].sort((a, b) => Math.abs(b.impactValue) - Math.abs(a.impactValue));
+  const safeFeatures = Array.isArray(features) ? features : [];
+  const sorted = [...safeFeatures].sort((a, b) => Math.abs(b?.impactValue || 0) - Math.abs(a?.impactValue || 0));
 
   return (
     <div className="w-full bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-sm text-slate-900">

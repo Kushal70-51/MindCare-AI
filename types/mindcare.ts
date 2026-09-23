@@ -78,12 +78,14 @@ export interface ScreenerResult {
 }
 
 export interface ReportHistoryEntry {
+  id?: string;
   date: string;
   completionDate: string;
   overallScore: number;
-  riskLevel: 'Low' | 'Moderate' | 'High';
+  riskLevel: 'Low' | 'Moderate' | 'High' | 'Optimal' | 'Minimal';
   phq9Total?: number;
   gad7Total?: number;
+  reportJson?: MentalHealthReport;
 }
 
 export interface ConditionScore {

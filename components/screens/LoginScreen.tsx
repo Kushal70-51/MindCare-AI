@@ -5,25 +5,47 @@ import Link from 'next/link';
 import { useApp } from '../../context/AppContext';
 import { Mail, Lock, LogIn, ArrowRight, ShieldCheck, Stethoscope } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { OAuthAuthModal } from '../ui/OAuthAuthModal';
 
 export const LoginScreen: React.FC = () => {
   const { setScreen, loginUser, showToast } = useApp();
 
-  const [email, setEmail] = useState('alex.vance@mindcare.ai');
-  const [password, setPassword] = useState('••••••••');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [oauthProvider, setOauthProvider] = useState<'Google' | 'Microsoft' | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) return;
-    loginUser(email);
-    setScreen('consent');
+    setError(null);
+    setLoading(true);
+
+    try {
+      const res = await fetch('/api/auth/user/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Invalid credentials');
+      }
+
+      loginUser(data.user);
+      setScreen('consent');
+    } catch (err: any) {
+      setError(err.message || 'Login failed. Please check your credentials.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleOAuth = (provider: 'Google' | 'Microsoft') => {
-    loginUser(`alex.${provider.toLowerCase()}@mindcare.ai`, `Alex Vance (${provider})`);
-    showToast(`Authenticated with ${provider}`);
-    setScreen('consent');
+  const handleOAuthClick = (provider: 'Google' | 'Microsoft') => {
+    setOauthProvider(provider);
   };
 
   return (
@@ -43,6 +65,12 @@ export const LoginScreen: React.FC = () => {
             Access your encrypted AI mental health assessment records.
           </p>
         </div>
+
+        {error && (
+          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium text-center">
+            {error}
+          </div>
+        )}
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -122,8 +150,8 @@ export const LoginScreen: React.FC = () => {
         <div className="space-y-2.5">
           <button
             type="button"
-            onClick={() => handleOAuth('Google')}
-            className="w-full flex items-center justify-center gap-3 p-2.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-xs font-semibold text-slate-200 transition-colors"
+            onClick={() => handleOAuthClick('Google')}
+            className="w-full flex items-center justify-center gap-3 p-2.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-xs font-semibold text-slate-700 transition-colors"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
               <path
@@ -148,12 +176,12 @@ export const LoginScreen: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => handleOAuth('Microsoft')}
-            className="w-full flex items-center justify-center gap-3 p-2.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-xs font-semibold text-slate-200 transition-colors"
+            onClick={() => handleOAuthClick('Microsoft')}
+            className="w-full flex items-center justify-center gap-3 p-2.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-xs font-semibold text-slate-700 transition-colors"
           >
             <svg className="w-4 h-4" viewBox="0 0 23 23">
               <path fill="#f35325" d="M1 1h10v10H1z" />
-              <path fill="#81bc06" d="M12 1h10v10H12z" />
+              <path fill="#81bc06" d="M12 1h10v10H1z" />
               <path fill="#05a6f0" d="M1 12h10v10H1z" />
               <path fill="#ffba08" d="M12 12h10v10H12z" />
             </svg>
@@ -172,8 +200,7 @@ export const LoginScreen: React.FC = () => {
           </button>
         </div>
 
-        {/* Link to the separate clinician-side portal (its own Next.js route,
-            outside this patient-side app flow) */}
+        {/* Link to clinician portal */}
         <Link
           href="/doctor"
           className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 text-xs font-semibold transition-all"
@@ -182,6 +209,18 @@ export const LoginScreen: React.FC = () => {
           <span>Are you a doctor? Sign in to the Provider Portal</span>
         </Link>
       </motion.div>
+
+      {/* OAuth Modal */}
+      <OAuthAuthModal
+        isOpen={Boolean(oauthProvider)}
+        provider={oauthProvider || 'Google'}
+        onClose={() => setOauthProvider(null)}
+        onAuthenticated={(userData) => {
+          loginUser(userData);
+          showToast(`Authenticated with ${oauthProvider} SSO`);
+          setScreen('consent');
+        }}
+      />
     </div>
   );
 };

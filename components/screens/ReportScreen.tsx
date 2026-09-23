@@ -50,6 +50,7 @@ export const ReportScreen: React.FC = () => {
     user,
     showToast,
     reportHistory,
+    loadPastReport,
     sharedDoctor,
     setSharedDoctor,
     socialInsight,
@@ -111,6 +112,38 @@ export const ReportScreen: React.FC = () => {
 
   return (
     <div className="w-full max-w-6xl mx-auto px-4 py-8 text-slate-900 space-y-7">
+      {/* Historical Report Snapshot Selector Bar */}
+      {reportHistory && reportHistory.length > 0 && (
+        <div className="p-4 rounded-2xl bg-teal-900 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <FileCheck2 className="w-5 h-5 text-teal-300 shrink-0" />
+            <div>
+              <p className="text-xs font-bold text-teal-100">Saved Report History ({reportHistory.length} Total)</p>
+              <p className="text-[11px] text-teal-300">
+                Currently displaying snapshot: <strong className="text-white">{report.completionDate || 'Current Session'}</strong>
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <select
+              onChange={(e) => {
+                const selected = reportHistory.find((r) => String(r.id) === e.target.value);
+                if (selected && loadPastReport) loadPastReport(selected);
+              }}
+              className="w-full sm:w-auto bg-teal-800 text-white text-xs font-semibold px-3 py-2 rounded-xl border border-teal-700 outline-none focus:ring-2 focus:ring-teal-400 cursor-pointer"
+              defaultValue=""
+            >
+              <option value="" disabled>Switch to Historical Assessment...</option>
+              {reportHistory.map((h, i) => (
+                <option key={h.id || i} value={String(h.id)}>
+                  {new Date(h.date).toLocaleDateString()} — Score {h.overallScore}/100 ({h.riskLevel} Risk)
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
       {/* Institutional Clinical Masthead Header */}
       <div className="relative overflow-hidden rounded-2xl bg-white border border-slate-200 shadow-sm">
         {/* Top Clinical Header Line */}
@@ -308,7 +341,7 @@ export const ReportScreen: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {report.conditions.map((cond, idx) => (
+          {(report?.conditions || []).map((cond, idx) => (
             <motion.div
               key={idx}
               initial={{ opacity: 0, y: 10 }}
@@ -476,7 +509,7 @@ export const ReportScreen: React.FC = () => {
           </span>
         </div>
 
-        <ShapChart features={report.shapFeatures} />
+        <ShapChart features={report?.shapFeatures || []} />
       </div>
 
       {/* Section 4: Verbatim Transcript Evidence & Behavioral Telemetry Audit Trail */}
@@ -492,7 +525,7 @@ export const ReportScreen: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {report.retrievedEvidence.map((ev) => (
+          {(report?.retrievedEvidence || []).map((ev) => (
             <div
               key={ev.id}
               className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-2.5 text-xs flex flex-col justify-between"
@@ -604,7 +637,7 @@ export const ReportScreen: React.FC = () => {
           </div>
 
           <div className="space-y-3">
-            {report.recommendations.map((rec) => (
+            {(report?.recommendations || []).map((rec) => (
               <div key={rec.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5 text-xs">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-slate-900 text-xs">{rec.title}</span>
@@ -641,7 +674,7 @@ export const ReportScreen: React.FC = () => {
           </div>
 
           <div className="space-y-3">
-            {report.medicalReferences.map((ref) => (
+            {(report?.medicalReferences || []).map((ref) => (
               <div key={ref.id} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1 text-xs">
                 <h4 className="font-bold text-slate-900 leading-snug">{ref.title}</h4>
                 <p className="text-[11px] text-slate-500">

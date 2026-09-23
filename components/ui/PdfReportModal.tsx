@@ -185,7 +185,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
       doc.text('CLINICAL FINDINGS & VERBATIM PATIENT EVIDENCE', margin + 115, y + 4.5);
 
       y += 6.5;
-      report.conditions.forEach((c, idx) => {
+      (report?.conditions || []).forEach((c, idx) => {
         const rowBg = idx % 2 === 0 ? [255, 255, 255] : [248, 250, 252];
         const wrapped = doc.splitTextToSize(c.description, 60);
         const rowHeight = Math.max(13, wrapped.length * 3.3 + 4);
@@ -228,7 +228,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
       doc.text('2. VERBATIM TRANSCRIPT EVIDENCE & TELEMETRY AUDIT TRAIL', margin, y);
 
       y += 4;
-      report.retrievedEvidence.slice(0, 4).forEach((ev) => {
+      (report?.retrievedEvidence || []).slice(0, 4).forEach((ev) => {
         doc.setFillColor(248, 250, 252);
         doc.setDrawColor(226, 232, 240);
         doc.setLineWidth(0.2);
@@ -322,7 +322,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
       doc.text('4. EXPLAINABLE AI (SHAP) MULTIMODAL FEATURE ATTRIBUTION', margin, y);
 
       y += 4;
-      report.shapFeatures.slice(0, 4).forEach((s) => {
+      (report?.shapFeatures || []).slice(0, 4).forEach((s) => {
         doc.setFillColor(255, 255, 255);
         doc.setDrawColor(226, 232, 240);
         const expWrapped = doc.splitTextToSize(s.explanation, contentWidth - 56);
@@ -361,7 +361,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
       doc.text('5. ACTIONABLE CLINICAL CARE PLAN & PRESCRIPTIVE RECOMMENDATIONS', margin, y);
 
       y += 4;
-      report.recommendations.forEach((rec) => {
+      (report?.recommendations || []).forEach((rec) => {
         doc.setFillColor(248, 250, 252);
         doc.setDrawColor(226, 232, 240);
         const descWrapped = doc.splitTextToSize(rec.description, contentWidth - 8);
