@@ -2,7 +2,7 @@
 // powered primarily by Google Gemini (GEMINI_API_KEY_SOCIAL) with fallback
 // to GEMINI_API_KEY_REPORTCHAT. OpenRouter has been completely removed.
 
-const GEMINI_MODELS = ["gemini-flash-latest", "gemini-2.5-flash"];
+const GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-flash-latest"];
 
 const SEGMENTS = [
   { key: "Late Night (12am-4am)", from: 0, to: 4 },

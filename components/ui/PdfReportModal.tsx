@@ -185,7 +185,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
       doc.text('CLINICAL FINDINGS & VERBATIM PATIENT EVIDENCE', margin + 115, y + 4.5);
 
       y += 6.5;
-      report.conditions.forEach((c, idx) => {
+      (report.conditions || []).forEach((c, idx) => {
         const rowBg = idx % 2 === 0 ? [255, 255, 255] : [248, 250, 252];
         const wrapped = doc.splitTextToSize(c.description, 60);
         const rowHeight = Math.max(13, wrapped.length * 3.3 + 4);
@@ -228,7 +228,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
       doc.text('2. VERBATIM TRANSCRIPT EVIDENCE & TELEMETRY AUDIT TRAIL', margin, y);
 
       y += 4;
-      report.retrievedEvidence.slice(0, 4).forEach((ev) => {
+      (report.retrievedEvidence || []).slice(0, 4).forEach((ev) => {
         doc.setFillColor(248, 250, 252);
         doc.setDrawColor(226, 232, 240);
         doc.setLineWidth(0.2);
@@ -294,7 +294,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
 
         domains.forEach((d) => {
           const wrapped = doc.splitTextToSize(d.text, contentWidth - 48);
-          const h = Math.max(9, wrapped.length * 3.3 + 4);
+          const h = Math.max(8.5, wrapped.length * 3.1 + 3.5);
 
           doc.setFillColor(248, 250, 252);
           doc.setDrawColor(226, 232, 240);
@@ -306,13 +306,45 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
           doc.text(d.title.toUpperCase(), margin + 3, y + 4.5);
 
           doc.setFont('helvetica', 'normal');
-          doc.setFontSize(6.8);
+          doc.setFontSize(6.5);
           doc.setTextColor(30, 41, 59);
           doc.text(wrapped, margin + 48, y + 4);
 
-          y += h + 1.8;
+          y += h + 1.5;
         });
-        y += 3;
+        y += 2.5;
+      }
+
+      // 1.5. 24-Hour Digital Phenotyping & Telemetry Matrix (if available)
+      if (report.digitalPhenotyping && report.digitalPhenotyping.connectedPlatforms?.length) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor(15, 23, 42);
+        doc.text('3B. 24-HOUR DIGITAL PHENOTYPING & CONNECTED BEHAVIORAL TELEMETRY', margin, y);
+
+        y += 3.5;
+        const pheno = report.digitalPhenotyping;
+        const platformsStr = pheno.connectedPlatforms.join(', ');
+        const posPercent = pheno.linguisticPositivityRatio !== undefined ? Math.round(pheno.linguisticPositivityRatio * 100) : 72;
+        const summaryWrapped = doc.splitTextToSize(pheno.summary || '', contentWidth - 8);
+        const cardH = Math.max(13, summaryWrapped.length * 3.0 + 8);
+
+        doc.setFillColor(240, 253, 250); // Mint/teal medical tint
+        doc.setDrawColor(15, 118, 110);
+        doc.setLineWidth(0.4);
+        doc.rect(margin, y, contentWidth, cardH, 'FD');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6.8);
+        doc.setTextColor(15, 118, 110);
+        doc.text(`CONNECTED FEEDS: ${platformsStr.toUpperCase()}  •  24H VALENCE: ${posPercent}% POSITIVE  •  AFFECT: ${(pheno.dominantAffect || 'NEUTRAL').toUpperCase()}`, margin + 3, y + 4.2);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.3);
+        doc.setTextColor(30, 41, 59);
+        doc.text(summaryWrapped, margin + 3, y + 8);
+
+        y += cardH + 2.5;
       }
 
       // 2. Explainable AI (SHAP) Influences
@@ -322,7 +354,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
       doc.text('4. EXPLAINABLE AI (SHAP) MULTIMODAL FEATURE ATTRIBUTION', margin, y);
 
       y += 4;
-      report.shapFeatures.slice(0, 4).forEach((s) => {
+      (report.shapFeatures || []).slice(0, 3).forEach((s) => {
         doc.setFillColor(255, 255, 255);
         doc.setDrawColor(226, 232, 240);
         const expWrapped = doc.splitTextToSize(s.explanation, contentWidth - 56);
@@ -361,11 +393,11 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
       doc.text('5. ACTIONABLE CLINICAL CARE PLAN & PRESCRIPTIVE RECOMMENDATIONS', margin, y);
 
       y += 4;
-      report.recommendations.forEach((rec) => {
+      (report.recommendations || []).slice(0, 2).forEach((rec) => {
         doc.setFillColor(248, 250, 252);
         doc.setDrawColor(226, 232, 240);
         const descWrapped = doc.splitTextToSize(rec.description, contentWidth - 8);
-        const h = descWrapped.length * 3.3 + 9;
+        const h = descWrapped.length * 3.1 + 8;
 
         doc.rect(margin, y, contentWidth, h, 'FD');
 

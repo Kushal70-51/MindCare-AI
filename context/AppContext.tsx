@@ -13,6 +13,7 @@ import {
   SocialPlatform,
   UserProfile,
   VoiceEmotionSample,
+  PlatformDailyTelemetry,
 } from '../types/mindcare';
 import { FaceEmotionReading } from '../hooks/useFaceEmotion';
 import { classifyTextEmotion, isNegativeEmotion, mapEmotionToSentiment } from '../utils/speechEmotion';
@@ -88,6 +89,9 @@ interface AppContextType {
   instagramAnalysisLoading: boolean;
   instagramAnalysisError: string | null;
   analyzeInstagramExportFile: (file: File) => Promise<void>;
+  dailyTelemetryMap: Record<string, PlatformDailyTelemetry>;
+  connectPlatformWithDailyData: (platformId: string, loginId: string, password?: string, telemetryOverride?: PlatformDailyTelemetry) => Promise<PlatformDailyTelemetry>;
+  disconnectPlatform: (platformId: string) => void;
   currentAiQuestion: string;
   streamingAiText: string;
   assessmentContext: any | null;
@@ -235,7 +239,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     nonMedicalDisclaimer: true,
     socialMediaData: false,
   });
-  const [socialPlatforms, setSocialPlatforms] = useState<SocialPlatform[]>(DEFAULT_SOCIAL_PLATFORMS);
+  const [socialPlatforms, setSocialPlatforms] = useState<SocialPlatform[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = window.localStorage.getItem('mindcare_social_platforms');
+        if (saved) return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return DEFAULT_SOCIAL_PLATFORMS;
+  });
   const [socialInsight, setSocialInsight] = useState<SocialInsight | null>(null);
   const [socialAnalysisLoading, setSocialAnalysisLoading] = useState(false);
   const [socialAnalysisError, setSocialAnalysisError] = useState<string | null>(null);
@@ -255,6 +267,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [instagramActivityInsight, setInstagramActivityInsight] = useState<InstagramActivityInsight | null>(null);
   const [instagramAnalysisLoading, setInstagramAnalysisLoading] = useState(false);
   const [instagramAnalysisError, setInstagramAnalysisError] = useState<string | null>(null);
+  const [dailyTelemetryMap, setDailyTelemetryMap] = useState<Record<string, PlatformDailyTelemetry>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = window.localStorage.getItem('mindcare_connected_telemetry');
+        if (saved) return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {};
+  });
   const [interviewMessages, setInterviewMessages] = useState<InterviewMessage[]>([]);
   const interviewMessagesRef = React.useRef<InterviewMessage[]>([]);
   const [currentAiQuestion, setCurrentAiQuestion] = useState<string>('');
@@ -267,11 +288,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [interviewLoading, setInterviewLoading] = useState<boolean>(false);
   const [interviewComplete, setInterviewComplete] = useState<boolean>(false);
   const [answers, setAnswers] = useState<AssessmentAnswer[]>([]);
+  const sanitizeReport = (rawReport: any): MentalHealthReport => {
+    if (!rawReport || typeof rawReport !== 'object') return INITIAL_REPORT;
+    return {
+      ...INITIAL_REPORT,
+      ...rawReport,
+      conditions: Array.isArray(rawReport.conditions) && rawReport.conditions.length > 0 ? rawReport.conditions : INITIAL_REPORT.conditions,
+      shapFeatures: Array.isArray(rawReport.shapFeatures) && rawReport.shapFeatures.length > 0 ? rawReport.shapFeatures : INITIAL_REPORT.shapFeatures,
+      retrievedEvidence: Array.isArray(rawReport.retrievedEvidence) && rawReport.retrievedEvidence.length > 0 ? rawReport.retrievedEvidence : INITIAL_REPORT.retrievedEvidence,
+      recommendations: Array.isArray(rawReport.recommendations) && rawReport.recommendations.length > 0 ? rawReport.recommendations : INITIAL_REPORT.recommendations,
+      medicalReferences: Array.isArray(rawReport.medicalReferences) && rawReport.medicalReferences.length > 0 ? rawReport.medicalReferences : INITIAL_REPORT.medicalReferences,
+    };
+  };
+
   const [report, setReport] = useState<MentalHealthReport>(() => {
     if (typeof window !== 'undefined') {
       try {
         const saved = window.localStorage.getItem('mindcare_latest_report');
-        if (saved) return JSON.parse(saved);
+        if (saved) return sanitizeReport(JSON.parse(saved));
       } catch (e) {}
     }
     return INITIAL_REPORT;
@@ -317,6 +351,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     });
 
+    // Automatically detect and upgrade local Instagram ZIP export to authentic telemetry
+    fetch('/api/social/instagram-local-export')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.exists) {
+          const stored = typeof window !== 'undefined' ? window.localStorage.getItem('mindcare_connected_telemetry') : null;
+          const currentMap = stored ? JSON.parse(stored) : {};
+          if (!currentMap['instagram']?.isRealData || (currentMap['instagram']?.totalActivitiesAnalyzed || 0) <= 5) {
+            connectPlatformWithDailyData('instagram', data.detectedUsername || 'abhijit_u_11').catch((err) => {
+              console.warn('[Auto-sync Instagram Archive]', err);
+            });
+          }
+        }
+      })
+      .catch((e) => console.warn('[Auto-sync Instagram Archive]', e.message));
+
     // The OAuth callback does a full-page redirect back to
     // `/?youtube_auth=...` or `/?reddit_auth=...` (required by the
     // authorization-code flow) — pick that up, drop the user back on the
@@ -336,7 +386,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         );
       } else if (redditAuthResult) {
         showToast(
-          redditAuthResult === 'denied'
+          redditAuthResult === 'not_configured'
+            ? 'Reddit OAuth keys are not set in .env.local yet. Please enter your Reddit username in Option B below!'
+            : redditAuthResult === 'denied'
             ? 'Reddit sign-in was cancelled.'
             : redditAuthResult === 'error'
             ? 'Reddit sign-in failed. Please try again.'
@@ -419,15 +471,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const toggleSocialPlatform = (id: string) => {
-    setSocialPlatforms((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, connected: !p.connected } : p))
-    );
+    setSocialPlatforms((prev) => {
+      const next = prev.map((p) => (p.id === id ? { ...p, connected: !p.connected } : p));
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('mindcare_social_platforms', JSON.stringify(next));
+      }
+      return next;
+    });
   };
 
   const updateSocialHandle = (id: string, handle: string) => {
-    setSocialPlatforms((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, handle } : p))
-    );
+    setSocialPlatforms((prev) => {
+      const next = prev.map((p) => (p.id === id ? { ...p, handle } : p));
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('mindcare_social_platforms', JSON.stringify(next));
+      }
+      return next;
+    });
   };
 
   // Real social-context signal: fetches a YouTube video's public comments and
@@ -671,10 +731,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             feature: 'Instagram Activity Profile (Data Export)',
             category: 'Social Context',
             impactValue: Number(netNegativity.toFixed(2)),
-            formattedValue: `${profile.analyzedCount} posts/comments analyzed from export`,
+            formattedValue: `${profile.analyzedCount.toLocaleString()} interactions analyzed from export`,
             explanation:
               activity.summary ||
-              `Own official Instagram data export: ${profile.analyzedCount} entries classified with the same pretrained emotion model as spoken responses; dominant tone "${profile.dominantEmotion}".`,
+              `Own official Instagram data export: ${profile.analyzedCount.toLocaleString()} entries classified with the same pretrained emotion model as spoken responses; dominant tone "${profile.dominantEmotion}".`,
           },
           ...prev.shapFeatures.filter((f) => f.feature !== 'Instagram Activity Profile (Data Export)'),
         ],
@@ -682,7 +742,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           {
             id: 'ev_instagram_profile_live',
             source: 'Social Data Feed',
-            quote: `Instagram data export: ${profile.analyzedCount} posts/comments analyzed, dominant tone "${profile.dominantEmotion}".`,
+            quote: profile.sampleTexts?.[0]
+              ? `Instagram verbatim log: "${profile.sampleTexts[0]}" (${profile.dominantEmotion} affect)`
+              : `Instagram data export: ${profile.analyzedCount.toLocaleString()} posts/comments analyzed, dominant tone "${profile.dominantEmotion}".`,
             sentiment: netNegativity > 0 ? 'Mild Distress' : 'Calm',
             timestamp: 'Instagram Data Export',
           },
@@ -703,10 +765,115 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ],
       }));
     } catch (err) {
-      setInstagramAnalysisError(err instanceof Error ? err.message : 'Could not analyze that export file.');
+      const msg = err instanceof Error ? err.message : 'Could not analyze that export file.';
+      setInstagramAnalysisError(msg);
+      throw err;
     } finally {
       setInstagramAnalysisLoading(false);
     }
+  };
+
+  const connectPlatformWithDailyData = async (
+    platformId: string,
+    loginId: string,
+    password?: string,
+    telemetryOverride?: PlatformDailyTelemetry
+  ): Promise<PlatformDailyTelemetry> => {
+    let telemetry: PlatformDailyTelemetry;
+    if (telemetryOverride && telemetryOverride.isRealData) {
+      telemetry = telemetryOverride;
+    } else {
+      const res = await fetch('/api/social/sync-daily', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platformId, loginId, password }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data?.error || 'Failed to sync platform telemetry');
+      }
+      telemetry = data.telemetry;
+    }
+    setDailyTelemetryMap((prev) => {
+      const next = { ...prev, [platformId]: telemetry };
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('mindcare_connected_telemetry', JSON.stringify(next));
+      }
+      return next;
+    });
+
+    setSocialPlatforms((prev) =>
+      prev.map((p) => (p.id === platformId ? { ...p, connected: true, handle: loginId } : p))
+    );
+
+    if (platformId === 'youtube') {
+      setYoutubeConnected(true);
+      setYoutubeChannelTitle(loginId);
+    } else if (platformId === 'reddit') {
+      setRedditConnected(true);
+      setRedditUsername(loginId);
+    }
+
+    // Add immediate SHAP feature & evidence to current active report
+    const netNegativity = telemetry.negativeRatio - telemetry.positiveRatio;
+    setReport((prev) => ({
+      ...prev,
+      shapFeatures: [
+        {
+          feature: `${telemetry.platformName} Daily Telemetry (${telemetry.totalActivitiesAnalyzed} items)`,
+          category: 'Social Context',
+          impactValue: Number(netNegativity.toFixed(2)),
+          formattedValue: `${Math.round(telemetry.positiveRatio * 100)}% positive / ${telemetry.dominantEmotion}`,
+          explanation: telemetry.clinicalSummary,
+        },
+        ...prev.shapFeatures.filter((f) => !f.feature.startsWith(telemetry.platformName)),
+      ],
+      retrievedEvidence: [
+        {
+          id: `ev_${platformId}_daily`,
+          source: 'Social Data Feed',
+          quote: telemetry.recentActivities[0]?.contentSnippet || telemetry.clinicalSummary,
+          sentiment: telemetry.dominantEmotion === 'joy' ? 'Positive' : telemetry.dominantEmotion === 'anxiety' ? 'Mild Distress' : 'Calm',
+          timestamp: `${telemetry.platformName} • 24hr Ingestion`,
+        },
+        ...prev.retrievedEvidence.filter((e) => e.id !== `ev_${platformId}_daily`),
+      ],
+    }));
+
+    showToast(`Connected ${telemetry.platformName} & ingested ${telemetry.totalActivitiesAnalyzed} day activities!`);
+    return telemetry;
+  };
+
+  const disconnectPlatform = (platformId: string) => {
+    setDailyTelemetryMap((prev) => {
+      const next = { ...prev };
+      delete next[platformId];
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('mindcare_connected_telemetry', JSON.stringify(next));
+      }
+      return next;
+    });
+
+    setSocialPlatforms((prev) =>
+      prev.map((p) => (p.id === platformId ? { ...p, connected: false } : p))
+    );
+
+    if (platformId === 'youtube') {
+      setYoutubeConnected(false);
+      setYoutubeChannelTitle(null);
+      setYoutubeProfile(null);
+      disconnectYoutubeAccountUtil().catch(() => {});
+    } else if (platformId === 'reddit') {
+      setRedditConnected(false);
+      setRedditUsername(null);
+      setRedditProfile(null);
+      disconnectRedditAccountUtil().catch(() => {});
+    } else if (platformId === 'instagram') {
+      setInstagramProfile(null);
+      setInstagramActivityInsight(null);
+    }
+
+    showToast(`Disconnected ${platformId} from assessment pipeline`);
   };
 
   // If the person already signed in with YouTube and/or Reddit (on the
@@ -1373,6 +1540,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               dominantTone: acousticEvidence ? (voiceEmotionSamples[0]?.dominantEmotion || 'NEUTRAL') : 'NEUTRAL',
               totalClips: voiceEmotionSamples.length,
             },
+            socialMediaTelemetry: {
+              activePlatformCount: Object.keys(dailyTelemetryMap).length,
+              platforms: Object.values(dailyTelemetryMap),
+            },
             screeners: {
               phq9: phq9 ? { total: phq9.total, severity: phq9.severity, maxTotal: phq9.maxTotal } : null,
               gad7: gad7 ? { total: gad7.total, severity: gad7.severity, maxTotal: gad7.maxTotal } : null,
@@ -1399,26 +1570,123 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           }).catch((err) => console.warn('[MindCare Context] Storage warning:', err.message));
 
           // Asynchronous AI Clinical Report Synthesis using full multimodal context
+          // Automatically re-fetches latest 24h digital data for all connected platforms so the user never has to re-sync manually
           if (!hasSynthesizedRef.current) {
             hasSynthesizedRef.current = true;
             setReportGenerating(true);
-            fetch('/api/reports/generate', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ context: contextObj }),
-            })
-              .then((res) => res.json())
-              .then((data) => {
-                if (data?.success && data?.report) {
-                  setReport(data.report);
-                  if (typeof window !== 'undefined') {
-                    window.localStorage.setItem('mindcare_latest_report', JSON.stringify(data.report));
+
+            (async () => {
+              let activeTelemetry: Record<string, PlatformDailyTelemetry> = { ...dailyTelemetryMap };
+
+              // Auto-ingest local Instagram archive from MindAI-Final folder if not already present
+              if (!activeTelemetry['instagram']) {
+                try {
+                  const localRes = await fetch('/api/social/instagram-local-export');
+                  const localData = await localRes.json();
+                  if (localData?.exists) {
+                    const parseRes = await fetch('/api/social/instagram-local-export', { method: 'POST' });
+                    const parsed = await parseRes.json();
+                    if (parsed?.success) {
+                      const syncRes = await fetch('/api/social/sync-daily', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          platformId: 'instagram',
+                          loginId: parsed.detectedUsername,
+                          customItems: parsed.entries.slice(0, 50),
+                          totalActivitiesCount: parsed.totalEventsCount,
+                          circadianTimestamps: parsed.allTimestamps,
+                          dataSource: `Official Instagram Data Archive (${parsed.fileName})`,
+                        }),
+                      });
+                      const syncData = await syncRes.json();
+                      if (syncData?.success && syncData?.telemetry) {
+                        activeTelemetry['instagram'] = syncData.telemetry;
+                        setDailyTelemetryMap((prev) => ({ ...prev, instagram: syncData.telemetry }));
+                      }
+                    }
                   }
-                  console.log('[MindCare AppContext] AI synthesized report successfully applied from assessment context!');
+                } catch (instaErr) {
+                  console.warn('[MindCare Assessment] Auto-load local Instagram export notice:', instaErr);
                 }
-              })
-              .catch((err) => console.warn('[MindCare AppContext] AI Report Synthesis notice:', err.message))
-              .finally(() => setReportGenerating(false));
+              }
+
+              // Re-fetch online API feeds (YouTube, Reddit, etc.) while skipping offline archives like Instagram
+              const connectedToSync = socialPlatforms.filter(
+                (p) => (p.connected || dailyTelemetryMap[p.id]) && p.id !== 'instagram'
+              );
+
+              if (connectedToSync.length > 0) {
+                console.log(`[MindCare Assessment] Automatically fetching fresh day data for ${connectedToSync.length} connected platforms...`);
+                try {
+                  await Promise.all(
+                    connectedToSync.map(async (p) => {
+                      try {
+                        const handle = p.handle || dailyTelemetryMap[p.id]?.loginId || 'user_active';
+                        const res = await fetch('/api/social/sync-daily', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ platformId: p.id, loginId: handle }),
+                        });
+                        const data = await res.json();
+                        if (data?.success && data?.telemetry) {
+                          activeTelemetry[p.id] = data.telemetry;
+                        }
+                      } catch (e) {
+                        console.warn(`[MindCare Assessment] Auto-sync notice for ${p.platform}:`, e);
+                      }
+                    })
+                  );
+                  setDailyTelemetryMap(activeTelemetry);
+                  if (typeof window !== 'undefined') {
+                    window.localStorage.setItem('mindcare_connected_telemetry', JSON.stringify(activeTelemetry));
+                  }
+                } catch (syncErr) {
+                  console.warn('[MindCare Assessment] Background auto-sync error:', syncErr);
+                }
+              }
+
+              // Update contextObj with the freshly fetched telemetry
+              const enrichedContextObj = {
+                ...contextObj,
+                socialMediaTelemetry: {
+                  activePlatformCount: Object.keys(activeTelemetry).length,
+                  platforms: Object.values(activeTelemetry),
+                },
+              };
+
+              setAssessmentContext(enrichedContextObj);
+              if (typeof window !== 'undefined') {
+                window.localStorage.setItem('mindcare_latest_assessment_context', JSON.stringify(enrichedContextObj));
+              }
+
+              fetch('/api/assessment/context', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(enrichedContextObj),
+              }).catch((err) => console.warn('[MindCare Context] Storage warning:', err.message));
+
+              try {
+                const res = await fetch('/api/reports/generate', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ context: enrichedContextObj }),
+                });
+                const data = await res.json();
+                if (data?.success && data?.report) {
+                  const cleanReport = sanitizeReport(data.report);
+                  setReport(cleanReport);
+                  if (typeof window !== 'undefined') {
+                    window.localStorage.setItem('mindcare_latest_report', JSON.stringify(cleanReport));
+                  }
+                  console.log('[MindCare AppContext] AI synthesized report successfully applied with auto-fetched daily digital telemetry!');
+                }
+              } catch (reportErr: any) {
+                console.warn('[MindCare AppContext] AI Report Synthesis notice:', reportErr.message);
+              } finally {
+                setReportGenerating(false);
+              }
+            })();
           }
         } catch (ctxErr) {
           console.warn('[MindCare Context] Compilation notice:', ctxErr);
@@ -1450,9 +1718,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
       const data = await res.json();
       if (data?.success && data?.report) {
-        setReport(data.report);
+        const cleanReport = sanitizeReport(data.report);
+        setReport(cleanReport);
         if (typeof window !== 'undefined') {
-          window.localStorage.setItem('mindcare_latest_report', JSON.stringify(data.report));
+          window.localStorage.setItem('mindcare_latest_report', JSON.stringify(cleanReport));
         }
       }
     } catch (e: any) {
@@ -1503,6 +1772,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         instagramAnalysisLoading,
         instagramAnalysisError,
         analyzeInstagramExportFile,
+        dailyTelemetryMap,
+        connectPlatformWithDailyData,
+        disconnectPlatform,
         currentAiQuestion,
         streamingAiText,
         assessmentContext,

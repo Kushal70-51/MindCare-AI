@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useApp } from '../../context/AppContext';
-import { Brain, Play, Clock, CheckCircle2, ShieldCheck, Sparkles, FileText, ClipboardList, Mic } from 'lucide-react';
+import { Brain, Play, Clock, CheckCircle2, ShieldCheck, Sparkles, FileText, ClipboardList, Mic, Share2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export const DashboardScreen: React.FC = () => {
@@ -46,13 +46,22 @@ export const DashboardScreen: React.FC = () => {
           </div>
         </div>
 
-        <button
-          onClick={() => setScreen('report')}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold transition-all"
-        >
-          <FileText className="w-4 h-4 text-teal-600" />
-          <span>View Previous Reports</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setScreen('social')}
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold shadow-xs transition-all"
+          >
+            <Share2 className="w-4 h-4 text-teal-600" />
+            <span>Connected Feeds</span>
+          </button>
+          <button
+            onClick={() => setScreen('report')}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold transition-all"
+          >
+            <FileText className="w-4 h-4 text-teal-600" />
+            <span>View Previous Reports</span>
+          </button>
+        </div>
       </div>
 
       {/* Main Large Hero Card for Mental Health Assessment */}

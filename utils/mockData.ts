@@ -63,10 +63,19 @@ export const DEFAULT_SOCIAL_PLATFORMS: SocialPlatform[] = [
     id: 'linkedin',
     platform: 'LinkedIn',
     handle: 'in/alexvance-health',
-    connected: true,
+    connected: false,
     iconName: 'Linkedin',
     description: 'Professional stress & career sentiment',
     color: '#0A66C2',
+  },
+  {
+    id: 'github',
+    platform: 'GitHub',
+    handle: 'alex-developer',
+    connected: false,
+    iconName: 'Github',
+    description: 'Developer nocturnal work rhythms & commit affect',
+    color: '#24292F',
   },
 ];
 

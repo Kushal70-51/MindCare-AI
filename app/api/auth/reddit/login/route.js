@@ -13,10 +13,12 @@ export async function GET() {
   const redirectUri = process.env.REDDIT_REDIRECT_URI;
 
   if (!clientId || !redirectUri) {
-    return Response.json(
-      { error: 'Reddit sign-in is not configured on the server yet (missing OAuth client credentials).' },
-      { status: 500 }
-    );
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: '/?reddit_auth=not_configured',
+      },
+    });
   }
 
   const state = randomBytes(16).toString('hex');

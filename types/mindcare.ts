@@ -16,12 +16,42 @@ export interface PrivacyConsentState {
 
 export interface SocialPlatform {
   id: string;
-  platform: 'Instagram' | 'Reddit' | 'Twitter (X)' | 'Facebook' | 'YouTube' | 'LinkedIn';
+  platform: 'Instagram' | 'Reddit' | 'Twitter (X)' | 'Facebook' | 'YouTube' | 'LinkedIn' | 'GitHub';
   handle: string;
   connected: boolean;
   iconName: string;
   description: string;
   color: string;
+}
+
+export interface PlatformDailyActivityItem {
+  id: string;
+  time: string;
+  type: string;
+  activityType?: string;
+  contentSnippet: string;
+  emotion: string;
+  detectedEmotion?: string;
+  sentiment: 'Positive' | 'Neutral' | 'Negative';
+}
+
+export interface PlatformDailyTelemetry {
+  platformId: string;
+  platformName: string;
+  loginId: string;
+  connectedAt: string;
+  syncedAtFormatted?: string;
+  syncedToday: boolean;
+  isRealData?: boolean;
+  dataSource?: string;
+  totalActivitiesAnalyzed: number;
+  dominantEmotion: string;
+  positiveRatio: number;
+  negativeRatio: number;
+  circadianPattern: string;
+  lifestyleInsight: string;
+  clinicalSummary: string;
+  recentActivities: PlatformDailyActivityItem[];
 }
 
 // One turn of history exchanged with the adaptive interview API
@@ -139,6 +169,20 @@ export interface MentalHealthReport {
   recommendations: ClinicalRecommendation[];
   medicalReferences: MedicalReference[];
   behavioralSummary?: Record<string, string>;
+  digitalPhenotyping?: DigitalPhenotypingReport;
+}
+
+export interface DigitalPhenotypingReport {
+  connectedPlatforms: string[];
+  circadianDisruptionScore?: number;
+  linguisticPositivityRatio?: number;
+  dominantAffect?: string;
+  summary: string;
+  platformBreakdown?: Array<{
+    platform: string;
+    findings: string;
+    clinicalImpact: 'Protective Buffer' | 'Elevated Risk' | 'Neutral Observation';
+  }>;
 }
 
 export type ScreenId =

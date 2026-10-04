@@ -3,7 +3,9 @@
 // Google Gemini (GEMINI_API_KEY_SOCIAL) with fallback to GEMINI_API_KEY_REPORTCHAT.
 // OpenRouter has been completely removed.
 
-const GEMINI_MODELS = ["gemini-flash-latest", "gemini-2.5-flash"];
+const GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-flash-latest"];
+const GROQ_MODELS = ["qwen/qwen3.8-27b", "openai/gpt-oss-20b"];
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 const SEGMENTS = [
   { key: "Late Night (12am-4am)", from: 0, to: 4 },
@@ -75,31 +77,44 @@ const REPLY_SCHEMA = {
   required: ["activityPattern", "lifestyleSignal", "contentThemeNote", "summary"],
 };
 
-async function generateWithGemini(apiKey, prompt, signal) {
+async function fetchWithTimeout(url, options, timeoutMs = 2500) {
+  const ctrl = new AbortController();
+  const id = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: ctrl.signal });
+    return res;
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+async function generateWithGemini(apiKey, prompt) {
   for (const model of GEMINI_MODELS) {
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          system_instruction: {
-            parts: [
-              {
-                text: "You are a digital-wellbeing analyst producing one section of a mental health screening report. You are given a real, computed time-of-day breakdown of a user's Instagram activity. Write grounded, cautious, non-diagnostic observations — this is a contextual signal, not a clinical finding. Plain prose, no markdown, no lists.",
-              },
-            ],
-          },
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: {
-            thinkingConfig: { thinkingBudget: 0 },
-            maxOutputTokens: 350,
-            responseMimeType: "application/json",
-            responseSchema: REPLY_SCHEMA,
-          },
-        }),
-        signal,
-      });
+      const res = await fetchWithTimeout(
+        url,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            system_instruction: {
+              parts: [
+                {
+                  text: "You are a digital-wellbeing analyst producing one section of a mental health screening report. You are given a real, computed time-of-day breakdown of a user's Instagram activity. Write grounded, cautious, non-diagnostic observations — this is a contextual signal, not a clinical finding. Plain prose, no markdown, no lists.",
+                },
+              ],
+            },
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            generationConfig: {
+              maxOutputTokens: 350,
+              responseMimeType: "application/json",
+              responseSchema: REPLY_SCHEMA,
+            },
+          }),
+        },
+        2500
+      );
 
       if (res.ok) {
         const data = await res.json();
@@ -117,6 +132,49 @@ async function generateWithGemini(apiKey, prompt, signal) {
   return null;
 }
 
+async function generateWithGroq(apiKey, prompt) {
+  for (const model of GROQ_MODELS) {
+    try {
+      const res = await fetchWithTimeout(
+        GROQ_URL,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You are a digital-wellbeing analyst producing one section of a mental health screening report. You are given a real, computed time-of-day breakdown of a user's Instagram activity. Write grounded, cautious, non-diagnostic observations. Output strictly a JSON object with keys: activityPattern, lifestyleSignal, contentThemeNote, summary.",
+              },
+              { role: "user", content: prompt },
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.3,
+            max_tokens: 350,
+          }),
+        },
+        4000
+      );
+
+      if (res.ok) {
+        const data = await res.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (content) {
+          return JSON.parse(content);
+        }
+      }
+    } catch (e) {
+      console.warn(`[Instagram Insight Groq ${model}] error:`, e.message);
+    }
+  }
+  return null;
+}
+
 export async function POST(request) {
   let body;
   try {
@@ -125,10 +183,13 @@ export async function POST(request) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { items = [], timezone = "UTC" } = body || {};
+  const { timezone = "UTC" } = body || {};
+  const items = Array.isArray(body?.items) && body.items.length > 0 ? body.items : (body?.entries || []);
+  const allTimestamps = Array.isArray(body?.allTimestamps) && body.allTimestamps.length > 0
+    ? body.allTimestamps
+    : items.map((it) => it.timestamp).filter(Boolean);
 
-  const timestamps = items.map((it) => it.timestamp).filter(Boolean);
-  const distribution = buildActivityDistribution(timestamps, timezone);
+  const distribution = buildActivityDistribution(allTimestamps, timezone);
 
   if (!distribution) {
     return Response.json({
@@ -163,29 +224,34 @@ export async function POST(request) {
     .map(([t, c]) => `${c} ${t}`)
     .join(", ");
 
-  const prompt = `Time-of-day distribution of this user's Instagram activity (messages + comments), computed from real archive timestamps in their local timezone:
+  const totalCount = body?.totalCount || allTimestamps.length || items.length;
+  const prompt = `Time-of-day distribution of this user's Instagram activity (messages + comments + interactions), computed from ${allTimestamps.length} real archive timestamps in their local timezone:
 ${distribution.map((d) => `- ${d.segment}: ${d.percentage}% (${d.count} events)`).join("\n")}
 
-Activity breakdown by type: ${typeSummary || "messages and comments"}
-Total archive events analyzed: ${items.length}
+Activity breakdown by type: ${typeSummary || "direct messages, comments, liked posts"}
+Total archive events analyzed: ${totalCount}
 
 Analyze this real activity data and produce the requested fields. Ground every claim in the numbers above — do not invent statistics. Output strictly a JSON object with keys: activityPattern, lifestyleSignal, contentThemeNote, summary.`;
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 12000);
 
   try {
     let parsed = null;
 
     // 1. Primary: GEMINI_API_KEY_SOCIAL
     if (geminiSocialKey) {
-      parsed = await generateWithGemini(geminiSocialKey, prompt, controller.signal);
+      parsed = await generateWithGemini(geminiSocialKey, prompt);
     }
 
     // 2. Fallback: GEMINI_API_KEY_REPORTCHAT (if social key rate-limits or fails)
     if (!parsed && geminiFallbackKey && geminiFallbackKey !== geminiSocialKey) {
       console.warn("[Instagram Insight] Primary social key failed or rate-limited, engaging fallback key");
-      parsed = await generateWithGemini(geminiFallbackKey, prompt, controller.signal);
+      parsed = await generateWithGemini(geminiFallbackKey, prompt);
+    }
+
+    // 3. Fallback: Groq LPU (Ultra-fast 300ms fallback)
+    const groqKey = process.env.GROQ_API_KEY || process.env.GROQ_API_KEY_ASSESSMENT;
+    if (!parsed && groqKey) {
+      console.log("[Instagram Insight] Engaging high-speed Groq LPU fallback engine");
+      parsed = await generateWithGroq(groqKey, prompt);
     }
 
     if (!parsed) throw new Error("No parseable insight generated");
@@ -200,7 +266,5 @@ Analyze this real activity data and produce the requested fields. Ground every c
       summary: `Most Instagram activity (${top.percentage}%) falls in the "${top.segment}" window. (Narrative analysis temporarily unavailable.)`,
       distribution,
     });
-  } finally {
-    clearTimeout(timeoutId);
   }
 }

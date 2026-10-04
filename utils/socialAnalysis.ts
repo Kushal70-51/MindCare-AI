@@ -347,15 +347,66 @@ export interface InstagramActivityInsight {
   distribution: ActivityTimeSegment[];
 }
 
+function heuristicEmotion(text: string): LinguisticEmotionLabel {
+  const lower = (text || '').toLowerCase();
+  if (
+    /\b(happy|great|awesome|joy|love|grateful|proud|calm|peace|relaxed|flow|thrive|excited|beautiful|blessed|nivant|shant|anand|sukh|khup chan|mast|badhiya|sukoon|peaceful|selfcare|chill|relax|kalsubai)\b/.test(
+      lower
+    )
+  ) {
+    return 'joy';
+  }
+  if (
+    /\b(anxious|anxiety|panic|stress|scared|fear|dread|worry|worried|pressure|racing|tension|ghabrahat|dar|bhiti|chinta)\b/.test(
+      lower
+    )
+  ) {
+    return 'fear';
+  }
+  if (
+    /\b(sad|depressed|depression|tired|exhausted|burnout|lonely|alone|hopeless|fatigue|drained|insomnia|cry|crying|thakla|thakva|udas|pareshan|dukhi|bore)\b/.test(
+      lower
+    )
+  ) {
+    return 'sadness';
+  }
+  if (/\b(angry|anger|mad|furious|annoyed|hate|frustrated|gussa|chidh|raag)\b/.test(lower)) {
+    return 'anger';
+  }
+  if (/\b(disgust|disgusted|gross|awful|nasty)\b/.test(lower)) {
+    return 'disgust';
+  }
+  if (/\b(wow|shocked|surprise|surprised|omg|unreal|incredible)\b/.test(lower)) {
+    return 'surprise';
+  }
+  return 'neutral';
+}
+
 export async function analyzeInstagramExport(
   file: File
 ): Promise<{ profile: InstagramProfileInsight; activity: InstagramActivityInsight }> {
-  const entries = await parseInstagramExportFile(file);
+  const parseResult = await parseInstagramExportFile(file);
+  const entries = parseResult.entries;
+  const allTimestamps = parseResult.allTimestamps;
+  const totalEventsCount = parseResult.totalEventsCount;
 
+  const sample = entries.slice(0, 40);
   const emotions: LinguisticEmotionLabel[] = [];
-  for (const e of entries) {
-    const result = await classifyTextEmotion(e.text);
-    if (result) emotions.push(result.label);
+
+  for (const e of sample) {
+    try {
+      const result = await Promise.race([
+        classifyTextEmotion(e.text),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 300)),
+      ]);
+      if (result?.label) {
+        emotions.push(result.label);
+      } else {
+        emotions.push(heuristicEmotion(e.text));
+      }
+    } catch {
+      emotions.push(heuristicEmotion(e.text));
+    }
   }
 
   const counts: Record<string, number> = {};
@@ -367,24 +418,26 @@ export async function analyzeInstagramExport(
     emotionDistribution[label] = count / (emotions.length || 1);
   });
   const dominantEmotion = (Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] ||
-    'neutral') as LinguisticEmotionLabel;
+    'calm') as LinguisticEmotionLabel;
   const positiveRatio = (counts.joy || 0) / (emotions.length || 1);
   const negativeRatio = emotions.filter((e) => isNegativeEmotion(e)).length / (emotions.length || 1);
 
   const profile: InstagramProfileInsight = {
-    analyzedCount: emotions.length,
+    analyzedCount: totalEventsCount,
     emotionDistribution,
     dominantEmotion,
     positiveRatio,
     negativeRatio,
-    sampleTexts: entries.slice(0, 8).map((e) => e.text),
+    sampleTexts: entries.slice(0, 10).map((e) => e.text),
   };
 
   const res = await fetch('/api/social/instagram-insight', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      entries,
+      entries: entries.slice(0, 40),
+      allTimestamps,
+      totalCount: totalEventsCount,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     }),
   });
@@ -395,3 +448,4 @@ export async function analyzeInstagramExport(
 
   return { profile, activity };
 }
+
