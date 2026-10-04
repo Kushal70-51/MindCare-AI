@@ -5,6 +5,8 @@ import { useApp } from '../../context/AppContext';
 import { User, Mail, Phone, Lock, CheckCircle2, ShieldCheck, ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 
+import { OAuthAuthModal } from '../ui/OAuthAuthModal';
+
 export const RegisterScreen: React.FC = () => {
   const { setScreen, loginUser, showToast } = useApp();
 
@@ -14,10 +16,13 @@ export const RegisterScreen: React.FC = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [acceptedPolicy, setAcceptedPolicy] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [oauthProvider, setOauthProvider] = useState<'Google' | 'Microsoft' | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
     if (!fullName || !email || !password) {
       setError('Please fill in all required fields.');
       return;
@@ -31,14 +36,30 @@ export const RegisterScreen: React.FC = () => {
       return;
     }
 
-    loginUser(email, fullName);
-    setScreen('consent');
+    setLoading(true);
+    try {
+      const res = await fetch('/api/auth/user/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fullName, email, password }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Registration failed');
+      }
+
+      loginUser(data.user);
+      setScreen('consent');
+    } catch (err: any) {
+      setError(err.message || 'Could not create account. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleOAuth = (provider: 'Google' | 'Microsoft') => {
-    loginUser(`alex.${provider.toLowerCase()}@mindcare.ai`, `Alex Vance (${provider})`);
-    showToast(`Signed up with ${provider}`);
-    setScreen('consent');
+  const handleOAuthClick = (provider: 'Google' | 'Microsoft') => {
+    setOauthProvider(provider);
   };
 
   return (
@@ -69,7 +90,7 @@ export const RegisterScreen: React.FC = () => {
         <div className="grid grid-cols-2 gap-3">
           <button
             type="button"
-            onClick={() => handleOAuth('Google')}
+            onClick={() => handleOAuthClick('Google')}
             className="flex items-center justify-center gap-2 p-2.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-xs font-semibold transition-colors"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
@@ -95,7 +116,7 @@ export const RegisterScreen: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => handleOAuth('Microsoft')}
+            onClick={() => handleOAuthClick('Microsoft')}
             className="flex items-center justify-center gap-2 p-2.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-xs font-semibold transition-colors"
           >
             <svg className="w-4 h-4" viewBox="0 0 23 23">
@@ -242,6 +263,18 @@ export const RegisterScreen: React.FC = () => {
           </button>
         </div>
       </motion.div>
+
+      {/* OAuth Modal */}
+      <OAuthAuthModal
+        isOpen={Boolean(oauthProvider)}
+        provider={oauthProvider || 'Google'}
+        onClose={() => setOauthProvider(null)}
+        onAuthenticated={(userData) => {
+          loginUser(userData);
+          showToast(`Authenticated with ${oauthProvider} SSO`);
+          setScreen('consent');
+        }}
+      />
     </div>
   );
 };
