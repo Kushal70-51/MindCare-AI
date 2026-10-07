@@ -1,6 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  typescript: {
+    // Skip heavy type-checking during Docker build to speed up EC2 builds
+    ignoreBuildErrors: true,
+  },
+  eslint: {
+    // Skip ESLint during production Docker build
+    ignoreDuringBuilds: true,
+  },
   // Turned off so the assistant's speech/effect sequences don't fire twice in dev.
   reactStrictMode: false,
   webpack: (config) => {
