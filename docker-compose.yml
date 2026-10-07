@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  mindcare-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mindcare-ai:latest
+    container_name: mindcare-app
+    restart: always
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    volumes:
+      # Persists SQLite database across container recreations
+      - mindcare-sqlite-data:/app/data
+
+volumes:
+  mindcare-sqlite-data:
+    driver: local

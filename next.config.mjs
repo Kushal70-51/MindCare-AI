@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone',
   // Turned off so the assistant's speech/effect sequences don't fire twice in dev.
   reactStrictMode: false,
   webpack: (config) => {
