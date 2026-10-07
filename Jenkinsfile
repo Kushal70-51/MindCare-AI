@@ -14,7 +14,7 @@ pipeline {
         SSH_CRED_ID    = 'aws-ec2-ssh-key'           // SSH Key ID for EC2 deployment
         
         // Target AWS EC2 Instance details for deployment
-        EC2_USER       = 'ubuntu'                    // 'ubuntu' or 'ec2-user' depending on AMI
+        EC2_USER       = 'ec2-user'                  // Amazon Linux AMI default user
         EC2_HOST       = '13.201.128.206'            // Target AWS EC2 Public IP
         CONTAINER_NAME = 'mindcare-app'
     }
