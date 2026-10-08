@@ -63,30 +63,36 @@ pipeline {
         stage('Deploy to AWS EC2') {
             steps {
                 echo "--> Deploying updated container to AWS EC2 instance (${EC2_HOST})..."
-                sshagent(credentials: ["${SSH_CRED_ID}"]) {
-                    sh """
-                        ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} '
-                            aws configure set region ${AWS_REGION}
-                            aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
-                            
-                            docker pull ${ECR_REGISTRY}/${ECR_REPO_NAME}:latest
-                            
-                            docker stop ${CONTAINER_NAME} || true
-                            docker rm ${CONTAINER_NAME} || true
-                            
-                            # Run container with environment file and volume for SQLite database persistence
-                            docker run -d \\
-                              --name ${CONTAINER_NAME} \\
-                              --restart always \\
-                              -p 3000:3000 \\
-                              --env-file /home/${EC2_USER}/.env.production \\
-                              -v mindcare-sqlite-data:/app/data \\
-                              ${ECR_REGISTRY}/${ECR_REPO_NAME}:latest
-                            
-                            # Clean up old unused images
-                            docker image prune -f
-                        '
-                    """
+                withCredentials([usernamePassword(credentialsId: "${AWS_CRED_ID}", usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+                    sshagent(credentials: ["${SSH_CRED_ID}"]) {
+                        sh """
+                            ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} '
+                                set -e
+                                aws configure set aws_access_key_id ${AWS_ACCESS_KEY_ID}
+                                aws configure set aws_secret_access_key ${AWS_SECRET_ACCESS_KEY}
+                                aws configure set region ${AWS_REGION}
+                                
+                                aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                                
+                                docker pull ${ECR_REGISTRY}/${ECR_REPO_NAME}:latest
+                                
+                                docker stop ${CONTAINER_NAME} || true
+                                docker rm ${CONTAINER_NAME} || true
+                                
+                                # Run container with environment file and volume for SQLite database persistence
+                                docker run -d \\
+                                  --name ${CONTAINER_NAME} \\
+                                  --restart always \\
+                                  -p 3000:3000 \\
+                                  --env-file /home/${EC2_USER}/.env.production \\
+                                  -v mindcare-sqlite-data:/app/data \\
+                                  ${ECR_REGISTRY}/${ECR_REPO_NAME}:latest
+                                
+                                # Clean up old unused images
+                                docker image prune -f
+                            '
+                        """
+                    }
                 }
             }
         }
