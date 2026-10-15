@@ -41,25 +41,25 @@ function generateDynamicFallback(history, langCode = "en", currentTurn = 1, elap
   const isHindi = langCode.includes("hi");
   const isMarathi = langCode.includes("mr");
 
-  // Only conclude if minimum 5 minutes (300s) have passed AND at least 10 turns completed
-  if (elapsedSeconds >= MINIMUM_DURATION_SEC && currentTurn >= 10) {
+  // Conclude with an inspiring, supportive clinical closing when 5 minutes (300s) have elapsed
+  if (elapsedSeconds >= MINIMUM_DURATION_SEC && currentTurn >= 6) {
     if (isHindi) {
       return {
-        reply: "अपने मन की बात इतनी ईमानदारी से साझा करने के लिए बहुत-बहुत धन्यवाद। हमने आपकी स्थिति को गहराई से समझा है। अब हम आपकी विस्तृत रिपोर्ट की ओर बढ़ते हैं।",
-        mood_tag: "calm",
+        reply: "आज इतनी सच्चाई, साहस और खुले दिल से अपने मन की बात साझा करने के लिए आपका बहुत-बहुत धन्यवाद। आपकी भावनाएं बेहद महत्वपूर्ण हैं। मैंने हमारी पूरी बातचीत को समझकर आपकी विस्तृत स्वास्थ्य रिपोर्ट तैयार की है। आप इस सफर में अकेले नहीं हैं—आइए, मिलकर आपकी रिपोर्ट देखते हैं।",
+        mood_tag: "supportive",
         continue_interview: false,
       };
     }
     if (isMarathi) {
       return {
-        reply: "तुमच्या भावना इतक्या मोकळेपणाने मांडल्याबद्दल मनापासून धन्यवाद. तुमच्या मानसिक स्थितीचे सखोल विश्लेषण पूर्ण झाले आहे. आता आपण तुमच्या सविस्तर अहवालाकडे वळूया.",
-        mood_tag: "calm",
+        reply: "आज इतक्या धैर्याने, प्रामाणिकपणे आणि मोकळेपणाने आपल्या भावना मांडल्याबद्दल मनःपूर्वक धन्यवाद. तुमची ही वाटचाल कौतुकास्पद आहे. आपल्या संपूर्ण संवादाच्या आधारे मी आपला सविस्तर क्लिनिकल अहवाल तयार केला आहे. आपण एकटे नाही आहात—चला, एकत्र आपला अहवाल पाहूया.",
+        mood_tag: "supportive",
         continue_interview: false,
       };
     }
     return {
-      reply: "Thank you so much for opening up and sharing so authentically with me. We have gathered deep insights into your wellbeing. Let's look at your clinical summary now.",
-      mood_tag: "calm",
+      reply: "Thank you so much for sharing your heart and story with me today. Your vulnerability and resilience are truly inspiring. I have woven everything we discussed into your personalized clinical evaluation report. You are never alone in this journey—let's take a look at your summary now.",
+      mood_tag: "supportive",
       continue_interview: false,
     };
   }
@@ -279,16 +279,22 @@ export async function POST(request) {
 - Elapsed interview duration: ${Math.floor(elapsedSeconds / 60)}m ${elapsedSeconds % 60}s (${elapsedSeconds} seconds total).
 - Behavioral health exploration domain: ${domainFocus}`;
 
-  if (elapsedSeconds < MINIMUM_DURATION_SEC) {
+  if (elapsedSeconds < 240) {
     const minsRemaining = Math.ceil((MINIMUM_DURATION_SEC - elapsedSeconds) / 60);
-    system += `\nMINIMUM 5-MINUTE DURATION ENFORCEMENT:
-The clinical interview must last at least 5 minutes of interactive dialogue (approx ${minsRemaining} minute(s) remaining). DO NOT conclude or wrap up the conversation yet!
+    system += `\nINTERVIEW STAGE: ACTIVE CLINICAL EXPLORATION (approx ${minsRemaining} minute(s) remaining until 5-minute target).
+Do NOT conclude or wrap up the conversation yet!
 Acknowledge what they specifically shared with heartfelt empathy, then ask exactly ONE relevant follow-up question digging deeper into their condition and the domain '${domainFocus}'.
 In the metadata tag, set continue_interview: true.`;
+  } else if (elapsedSeconds < MINIMUM_DURATION_SEC) {
+    system += `\nINTERVIEW STAGE: GENTLE CLOSING PREPARATION (Final minute, 4-5 minutes elapsed).
+Begin gently transitioning towards closure. Acknowledge what they shared with deep validation and ask ONE gentle final reflection question (e.g. asking what normally brings them comfort or peace, or how they feel about taking positive steps for their wellbeing).
+In the metadata tag, set continue_interview: true.`;
   } else {
-    system += `\nMINIMUM DURATION SATISFIED (5+ minutes elapsed):
-If you have thoroughly understood their mental health condition, symptoms, triggers, and daily life, you may now provide a warm, compassionate closing statement (1-2 sentences, max 25 words) thanking them and inviting them to view their report, setting continue_interview: false in the metadata tag.
-However, if their condition still requires deeper investigation or they have unresolved distress, continue asking thoughtful clinical questions with continue_interview: true.`;
+    system += `\nINTERVIEW STAGE: 5 MINUTES SATISFIED — BEAUTIFUL, EMPATHETIC & CLINICALLY GROUNDED CONCLUSION:
+The 5-minute consultation is complete! Conclude the session with a warm, uplifting, and validating closing statement (2 spoken sentences, max 35 words).
+Express heartfelt appreciation for their courage and vulnerability, assure them that their feelings are heard and that they are not alone, and warmly invite them to review their personalized clinical evaluation report.
+Do NOT ask any more questions!
+In the metadata tag, MUST set continue_interview: false.`;
   }
 
   if (isHindi) {

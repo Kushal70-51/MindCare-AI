@@ -105,13 +105,13 @@ export async function GET(request) {
     if (!user) {
       const userId = `usr_google_${crypto.randomBytes(8).toString('hex')}`;
       db.prepare(
-        'INSERT INTO users (id, full_name, email, password_hash, auth_provider, avatar_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-      ).run(userId, fullName, cleanEmail, 'OAUTH_GOOGLE', 'google', avatarUrl, now);
+        'INSERT INTO users (id, full_name, email, password_hash, auth_provider, avatar_url, last_login_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      ).run(userId, fullName, cleanEmail, 'OAUTH_GOOGLE', 'google', avatarUrl, now, now);
       user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
     } else {
       db.prepare(
-        'UPDATE users SET auth_provider = ?, avatar_url = COALESCE(?, avatar_url) WHERE id = ?'
-      ).run('google', avatarUrl, user.id);
+        'UPDATE users SET auth_provider = ?, avatar_url = COALESCE(?, avatar_url), last_login_at = ? WHERE id = ?'
+      ).run('google', avatarUrl, now, user.id);
       user = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
     }
 

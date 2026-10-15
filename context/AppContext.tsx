@@ -375,6 +375,41 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  const syncPendingGuestAssessment = async () => {
+    if (typeof window === 'undefined') return;
+    try {
+      const latestStored = window.localStorage.getItem('mindcare_latest_report');
+      if (!latestStored) return;
+      const parsedReport = JSON.parse(latestStored);
+      if (!parsedReport || parsedReport.overallScore === undefined) return;
+
+      const dbRes = await fetch('/api/user/assessments');
+      if (dbRes.ok) {
+        const dbData = await dbRes.json();
+        const alreadyExists = (dbData.history || []).some(
+          (h: any) => h.overallScore === parsedReport.overallScore && h.riskLevel === parsedReport.riskLevel
+        );
+        if (!alreadyExists) {
+          await fetch('/api/user/assessments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              overallScore: parsedReport.overallScore,
+              riskLevel: parsedReport.riskLevel || 'Low',
+              phq9Total: parsedReport.phq9?.total,
+              gad7Total: parsedReport.gad7?.total,
+              report: parsedReport,
+              answers: [],
+            }),
+          });
+          await loadAssessmentHistory();
+        }
+      }
+    } catch (e) {
+      console.warn('Sync pending guest assessment notice:', e);
+    }
+  };
+
   const loadPastReport = (entry: ReportHistoryEntry) => {
     setScreen('report');
     let parsedReport = entry.reportJson;
@@ -438,6 +473,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             isLoggedIn: true,
           }));
           loadAssessmentHistory();
+          syncPendingGuestAssessment();
           setScreenState((current) => {
             if (['splash', 'welcome', 'login', 'register'].includes(current)) {
               if (typeof window !== 'undefined') {
@@ -595,6 +631,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         isLoggedIn: true,
       }));
       loadAssessmentHistory();
+      syncPendingGuestAssessment();
       showToast(`Welcome back, ${userOrEmail.full_name || userOrEmail.fullName || 'User'}!`);
     } else {
       setUserState((prev) => ({
@@ -604,6 +641,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         isLoggedIn: true,
       }));
       loadAssessmentHistory();
+      syncPendingGuestAssessment();
       showToast(`Welcome back, ${name || userOrEmail.split('@')[0]}!`);
     }
   };

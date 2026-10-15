@@ -34,6 +34,10 @@ export async function POST(request) {
     return Response.json({ error: 'Incorrect password.' }, { status: 401 });
   }
 
+  const now = new Date().toISOString();
+  db.prepare('UPDATE users SET last_login_at = ? WHERE id = ?').run(now, user.id);
+  user.last_login_at = now;
+
   const { token } = createUserSession(user.id);
   const cookieStore = await cookies();
   cookieStore.set(USER_SESSION_COOKIE_NAME, token, {

@@ -586,7 +586,10 @@ export const AssessmentInterfaceScreen: React.FC = () => {
     const finishSpeaking = () => {
       if (interviewComplete) {
         showToast('Assessment Completed!');
-        setScreen('completed');
+        // Allow user 2.2 seconds to absorb the warm closing words before transition
+        setTimeout(() => {
+          setScreen('completed');
+        }, 2200);
       } else {
         // 600ms acoustic buffer allows speaker playback to clear so TTS audio doesn't bleed into mic
         setTimeout(() => {
@@ -1039,16 +1042,25 @@ export const AssessmentInterfaceScreen: React.FC = () => {
       {/* TOP HEADER: Active Consultation Timer + Stepper Progress + 3-Language Segmented Switcher */}
       <div className="shrink-0 flex flex-wrap items-center justify-between gap-2.5 bg-white border border-slate-200/90 px-3 sm:px-5 py-2 rounded-2xl shadow-xs">
         <div className="flex items-center gap-3">
-          {/* Active Consultation Live Timer */}
+          {/* Active Consultation Live Timer with 5-Minute Indicator */}
           <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-teal-50 border border-teal-200 text-teal-800 shadow-2xs">
             <span className="relative flex h-2 w-2 shrink-0">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${interviewDurationSec >= 300 ? 'bg-emerald-400' : 'bg-teal-400 animate-ping'}`}></span>
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${interviewDurationSec >= 300 ? 'bg-emerald-600' : 'bg-teal-500'}`}></span>
             </span>
             <Clock className="w-3.5 h-3.5 text-teal-600 shrink-0" />
             <span className="text-xs font-mono font-black tracking-tight text-teal-900">
-              {formatDuration(interviewDurationSec)}
+              {formatDuration(interviewDurationSec)} <span className="text-slate-400 font-normal">/ 05:00</span>
             </span>
+            {interviewDurationSec >= 300 ? (
+              <span className="text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-md">
+                5m Reached
+              </span>
+            ) : interviewDurationSec >= 240 ? (
+              <span className="text-[10px] font-extrabold uppercase bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-md animate-pulse">
+                Final Min
+              </span>
+            ) : null}
           </div>
 
           <div>
@@ -1189,15 +1201,21 @@ export const AssessmentInterfaceScreen: React.FC = () => {
                 type="button"
                 onClick={() => concludeInterview()}
                 className={`p-1.5 px-3 rounded-xl text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 ${
-                  interviewTurnNumber >= 3 || interviewDurationSec >= 120
+                  interviewComplete || interviewDurationSec >= 300
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-md shadow-emerald-600/30 ring-2 ring-emerald-400 ring-offset-1 animate-pulse'
+                    : interviewTurnNumber >= 3 || interviewDurationSec >= 120
                     ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
                     : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
                 }`}
                 title="Conclude assessment and review full report"
               >
                 <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                <span className="hidden sm:inline">
-                  {interviewTurnNumber >= 3 ? 'Conclude' : 'Wrap Up'}
+                <span>
+                  {interviewComplete || interviewDurationSec >= 300
+                    ? 'Review Report ➔'
+                    : interviewTurnNumber >= 3
+                    ? 'Conclude'
+                    : 'Wrap Up'}
                 </span>
               </button>
             </div>
@@ -1367,6 +1385,49 @@ export const AssessmentInterfaceScreen: React.FC = () => {
                 </motion.div>
               )}
 
+              {/* Empathetic 5-Minute Interview Completion Card */}
+              {(interviewComplete || interviewDurationSec >= 300) && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.96, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  className="mx-auto my-3 w-full max-w-lg p-5 rounded-3xl bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 border-2 border-emerald-300 shadow-lg text-center space-y-3"
+                >
+                  <div className="w-12 h-12 mx-auto rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center shadow-md shadow-emerald-500/20">
+                    <Sparkles className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-black text-slate-900">
+                      {selectedLang.startsWith('hi')
+                        ? 'परामर्श सफलतापूर्वक पूर्ण हुआ'
+                        : selectedLang.startsWith('mr')
+                        ? 'सल्ला यशस्वीरीत्या पूर्ण झाला'
+                        : 'Consultation Complete'}
+                    </h3>
+                    <p className="text-xs sm:text-sm text-slate-600 mt-1 leading-relaxed">
+                      {selectedLang.startsWith('hi')
+                        ? 'इतनी ईमानदारी और साहस के साथ अपने विचार साझा करने के लिए धन्यवाद। आपका क्लिनिकल मूल्यांकन और विस्तृत रिपोर्ट तैयार है।'
+                        : selectedLang.startsWith('mr')
+                        ? 'मोकळेपणाने आणि धैर्याने तुमचे विचार मांडल्याबद्दल धन्यवाद. तुमचे क्लिनिकल मूल्यमापन आणि तपशीलवार अहवाल तयार आहे.'
+                        : 'Thank you for taking this time and sharing your thoughts so openly. Your comprehensive clinical analysis and personalized wellness plan are ready.'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => concludeInterview()}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-sm shadow-md shadow-emerald-600/30 transition-all hover:scale-[1.02] cursor-pointer"
+                  >
+                    <span>
+                      {selectedLang.startsWith('hi')
+                        ? 'विस्तृत रिपोर्ट देखें'
+                        : selectedLang.startsWith('mr')
+                        ? 'सविस्तर अहवाल पहा'
+                        : 'View Clinical Assessment Report'}
+                    </span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </motion.div>
+              )}
+
               <div ref={messagesEndRef} />
             </div>
 
@@ -1466,119 +1527,161 @@ export const AssessmentInterfaceScreen: React.FC = () => {
               )}
             </AnimatePresence>
 
-            {/* Editable Text Area with Live Word Streaming */}
-            <div className="relative rounded-xl border border-slate-200 bg-slate-50 focus-within:bg-white focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-100 transition-all p-2.5 flex flex-col min-h-[75px]">
-              <textarea
-                value={userInput}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setInputValue(val);
-                  sessionPrefixRef.current = val;
-                  isManuallyEditedRef.current = true;
-                  cancelCountdown();
-                  if (autoSubmit && val.trim().length >= 1) {
-                    silenceTimerRef.current = setTimeout(() => {
-                      startCountdown(3);
-                    }, 2500);
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendAnswer(userInputRef.current || userInput);
-                  }
-                }}
-                rows={2}
-                placeholder={currentLangObj.placeholder}
-                className="w-full bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none resize-none leading-relaxed"
-              />
-
-              {/* Bottom info row inside textarea */}
-              <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-200/60 mt-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  {isListening && !micMuted && (
-                    <span className="text-teal-700 font-semibold flex items-center gap-1.5 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
-                      <span className="w-2 h-2 rounded-full bg-teal-500 animate-ping" />
-                      Live Speech ({currentLangObj.flag} {currentLangObj.nativeLabel})
-                    </span>
-                  )}
-                  {isManuallyEditedRef.current && (
-                    <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 font-medium">
-                      Keyboard input
-                    </span>
-                  )}
+            {interviewComplete ? (
+              <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 text-white flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg shadow-teal-900/10 border border-teal-400/30">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-11 h-11 rounded-2xl bg-white/20 flex items-center justify-center shrink-0 backdrop-blur-xs">
+                    <Check className="w-6 h-6 stroke-[3] text-white" />
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-sm sm:text-base">
+                      {selectedLang.startsWith('hi')
+                        ? 'परामर्श समाप्त · मूल्यांकन तैयार है'
+                        : selectedLang.startsWith('mr')
+                        ? 'सल्ला संपन्न · मूल्यमापन तयार आहे'
+                        : 'Consultation Concluded · Assessment Ready'}
+                    </h4>
+                    <p className="text-xs text-teal-100">
+                      {selectedLang.startsWith('hi')
+                        ? 'विस्तृत रिपोर्ट देखने के लिए यहाँ क्लिक करें।'
+                        : selectedLang.startsWith('mr')
+                        ? 'तपशीलवार अहवाल पाहण्यासाठी येथे क्लिक करा.'
+                        : 'Click below to review your comprehensive clinical report.'}
+                    </p>
+                  </div>
                 </div>
-
-                <div className="flex items-center gap-3">
-                  <span className="hidden sm:inline">
-                    Press <kbd className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 font-mono text-[10px]">Enter ↵</kbd> to send
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Bottom Actions: Auto-Send Toggle, Send & Clear */}
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
-              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    cancelCountdown();
-                    setAutoSubmit((prev) => {
-                      showToast(prev ? 'Manual mode: click Send or press Enter' : 'Auto-send enabled: sends after pause');
-                      return !prev;
-                    });
-                  }}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-xs font-semibold ${
-                    autoSubmit
-                      ? 'bg-teal-50 border-teal-200 text-teal-700 hover:bg-teal-100'
-                      : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
-                  }`}
-                  title={
-                    autoSubmit
-                      ? 'Automatically sends response after a natural pause. Click to switch to manual send.'
-                      : 'Manual send: takes as much time as you need. Click to send.'
-                  }
+                  onClick={() => concludeInterview()}
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-white text-emerald-800 hover:bg-emerald-50 font-black text-xs sm:text-sm shadow-md transition-all shrink-0 hover:scale-[1.02] cursor-pointer inline-flex items-center justify-center gap-2"
                 >
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>{autoSubmit ? 'Auto-Send: ON' : 'Manual Mode'}</span>
-                </button>
-              </div>
-
-              <div className="flex items-center gap-2 ml-auto">
-                {userInput.trim() && (
-                  <button
-                    type="button"
-                    onClick={handleClearInput}
-                    className="p-1.5 px-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 text-xs font-semibold flex items-center gap-1 transition-all"
-                    title="Clear text to re-speak"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
-                    <span>{selectedLang.startsWith('hi') ? 'हटाएं' : selectedLang.startsWith('mr') ? 'साफ करा' : 'Clear'}</span>
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => handleSendAnswer(userInput)}
-                  disabled={!userInput.trim() || aiMode === 'thinking'}
-                  className={`p-2 px-5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all ${
-                    userInput.trim() && aiMode !== 'thinking'
-                      ? 'bg-teal-600 hover:bg-teal-700 text-white shadow-teal-600/20'
-                      : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                  }`}
-                >
-                  <Send className="w-3.5 h-3.5" />
                   <span>
                     {selectedLang.startsWith('hi')
-                      ? 'उत्तर भेजें'
+                      ? 'रिपोर्ट देखें'
                       : selectedLang.startsWith('mr')
-                      ? 'उत्तर पाठवा'
-                      : 'Send Answer'}
+                      ? 'अहवाल पहा'
+                      : 'Review Clinical Report'}
                   </span>
+                  <ArrowRight className="w-4 h-4 text-emerald-800" />
                 </button>
               </div>
-            </div>
+            ) : (
+              <>
+                {/* Editable Text Area with Live Word Streaming */}
+                <div className="relative rounded-xl border border-slate-200 bg-slate-50 focus-within:bg-white focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-100 transition-all p-2.5 flex flex-col min-h-[75px]">
+                  <textarea
+                    value={userInput}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setInputValue(val);
+                      sessionPrefixRef.current = val;
+                      isManuallyEditedRef.current = true;
+                      cancelCountdown();
+                      if (autoSubmit && val.trim().length >= 1) {
+                        silenceTimerRef.current = setTimeout(() => {
+                          startCountdown(3);
+                        }, 2500);
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendAnswer(userInputRef.current || userInput);
+                      }
+                    }}
+                    rows={2}
+                    placeholder={currentLangObj.placeholder}
+                    className="w-full bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none resize-none leading-relaxed"
+                  />
+
+                  {/* Bottom info row inside textarea */}
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-200/60 mt-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {isListening && !micMuted && (
+                        <span className="text-teal-700 font-semibold flex items-center gap-1.5 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
+                          <span className="w-2 h-2 rounded-full bg-teal-500 animate-ping" />
+                          Live Speech ({currentLangObj.flag} {currentLangObj.nativeLabel})
+                        </span>
+                      )}
+                      {isManuallyEditedRef.current && (
+                        <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 font-medium">
+                          Keyboard input
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <span className="hidden sm:inline">
+                        Press <kbd className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 font-mono text-[10px]">Enter ↵</kbd> to send
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bottom Actions: Auto-Send Toggle, Send & Clear */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        cancelCountdown();
+                        setAutoSubmit((prev) => {
+                          showToast(prev ? 'Manual mode: click Send or press Enter' : 'Auto-send enabled: sends after pause');
+                          return !prev;
+                        });
+                      }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-xs font-semibold ${
+                        autoSubmit
+                          ? 'bg-teal-50 border-teal-200 text-teal-700 hover:bg-teal-100'
+                          : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                      }`}
+                      title={
+                        autoSubmit
+                          ? 'Automatically sends response after a natural pause. Click to switch to manual send.'
+                          : 'Manual send: takes as much time as you need. Click to send.'
+                      }
+                    >
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>{autoSubmit ? 'Auto-Send: ON' : 'Manual Mode'}</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2 ml-auto">
+                    {userInput.trim() && (
+                      <button
+                        type="button"
+                        onClick={handleClearInput}
+                        className="p-1.5 px-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 text-xs font-semibold flex items-center gap-1 transition-all"
+                        title="Clear text to re-speak"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                        <span>{selectedLang.startsWith('hi') ? 'हटाएं' : selectedLang.startsWith('mr') ? 'साफ करा' : 'Clear'}</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => handleSendAnswer(userInput)}
+                      disabled={!userInput.trim() || aiMode === 'thinking'}
+                      className={`p-2 px-5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all ${
+                        userInput.trim() && aiMode !== 'thinking'
+                          ? 'bg-teal-600 hover:bg-teal-700 text-white shadow-teal-600/20'
+                          : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                      }`}
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>
+                        {selectedLang.startsWith('hi')
+                          ? 'उत्तर भेजें'
+                          : selectedLang.startsWith('mr')
+                          ? 'उत्तर पाठवा'
+                          : 'Send Answer'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
