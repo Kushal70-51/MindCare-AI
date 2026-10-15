@@ -27,8 +27,21 @@ function redirectWithCookies(location, cookies) {
   return new Response(null, { status: 302, headers });
 }
 
+function getAppOrigin(request, url) {
+  if (process.env.NEXT_PUBLIC_APP_URL) {
+    return process.env.NEXT_PUBLIC_APP_URL.replace(/\/+$/, '');
+  }
+  const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
+  const forwardedHost = request.headers.get('x-forwarded-host') || request.headers.get('host');
+  if (forwardedHost && !forwardedHost.includes('0.0.0.0') && !forwardedHost.includes('127.0.0.1')) {
+    return `${forwardedProto}://${forwardedHost}`;
+  }
+  return 'https://mindcare-ai.duckdns.org';
+}
+
 export async function GET(request) {
   const url = new URL(request.url);
+  const origin = getAppOrigin(request, url);
   const code = url.searchParams.get('code');
   const state = url.searchParams.get('state');
   const errorParam = url.searchParams.get('error');
@@ -37,17 +50,17 @@ export async function GET(request) {
   const expectedState = cookies['google_oauth_state'];
 
   if (errorParam) {
-    return redirectWithCookies(`${url.origin}/?auth=denied`, [CLEAR_STATE_COOKIE]);
+    return redirectWithCookies(`${origin}/?auth=denied`, [CLEAR_STATE_COOKIE]);
   }
 
   if (!code || !state || state !== expectedState) {
-    return redirectWithCookies(`${url.origin}/?auth=error`, [CLEAR_STATE_COOKIE]);
+    return redirectWithCookies(`${origin}/?auth=error`, [CLEAR_STATE_COOKIE]);
   }
 
   const clientId = process.env.GOOGLE_CLIENT_ID || process.env.YOUTUBE_OAUTH_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET || process.env.YOUTUBE_OAUTH_CLIENT_SECRET;
   const redirectUri =
-    process.env.GOOGLE_OAUTH_REDIRECT_URI || `${url.origin}/api/auth/google/callback`;
+    process.env.GOOGLE_OAUTH_REDIRECT_URI || `${origin}/api/auth/google/callback`;
 
   try {
     // 1. Exchange authorization code for access token
@@ -66,7 +79,7 @@ export async function GET(request) {
 
     if (!tokenRes.ok || !tokenData.access_token) {
       console.error('Google OAuth token exchange failed:', tokenData);
-      return redirectWithCookies(`${url.origin}/?auth=token_error`, [CLEAR_STATE_COOKIE]);
+      return redirectWithCookies(`${origin}/?auth=token_error`, [CLEAR_STATE_COOKIE]);
     }
 
     // 2. Fetch authenticated user profile from Google UserInfo
@@ -77,7 +90,7 @@ export async function GET(request) {
 
     if (!profileRes.ok || !profile.email) {
       console.error('Failed to retrieve Google profile:', profile);
-      return redirectWithCookies(`${url.origin}/?auth=profile_error`, [CLEAR_STATE_COOKIE]);
+      return redirectWithCookies(`${origin}/?auth=profile_error`, [CLEAR_STATE_COOKIE]);
     }
 
     const cleanEmail = profile.email.toLowerCase().trim();
@@ -107,12 +120,12 @@ export async function GET(request) {
 
     const sessionCookie = `${USER_SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${USER_SESSION_MAX_AGE_SECONDS}`;
 
-    return redirectWithCookies(`${url.origin}/?auth=google_success`, [
+    return redirectWithCookies(`${origin}/?auth=google_success`, [
       CLEAR_STATE_COOKIE,
       sessionCookie,
     ]);
   } catch (err) {
     console.error('Google OAuth callback handler error:', err);
-    return redirectWithCookies(`${url.origin}/?auth=server_error`, [CLEAR_STATE_COOKIE]);
+    return redirectWithCookies(`${origin}/?auth=server_error`, [CLEAR_STATE_COOKIE]);
   }
 }
