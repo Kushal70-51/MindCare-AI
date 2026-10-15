@@ -76,7 +76,7 @@ export default function LoginStep({ speak, onDone }) {
               ref={emailInputRef}
               className="name auth-input"
               type="text"
-              placeholder="e.g. alex@mindsense.health"
+              placeholder="e.g. user@mindsense.health"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="username"

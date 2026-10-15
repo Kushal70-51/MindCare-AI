@@ -77,7 +77,7 @@ function AppContent() {
           />
         )}
 
-        <main className="flex-1 w-full min-w-0 overflow-x-hidden min-h-[calc(100vh-65px)]">
+        <main className={`flex-1 w-full min-w-0 ${screen === 'assessment' ? 'h-[calc(100vh-65px)] overflow-hidden' : 'overflow-x-hidden min-h-[calc(100vh-65px)]'}`}>
           <AnimatePresence mode="wait">
             <motion.div
               key={screen}
@@ -85,7 +85,7 @@ function AppContent() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -12 }}
               transition={{ duration: 0.25, ease: 'easeInOut' }}
-              className="w-full"
+              className={`w-full ${screen === 'assessment' ? 'h-full flex flex-col min-h-0' : ''}`}
             >
               {renderScreen()}
             </motion.div>

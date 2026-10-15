@@ -5,19 +5,19 @@ import {
 } from '../types/mindcare';
 
 export const INITIAL_USER: UserProfile = {
-  id: 'usr_10928',
-  fullName: 'Alex Vance',
-  email: 'alex.vance@mindcare.ai',
-  phone: '+1 (555) 234-5678',
-  avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-  isLoggedIn: true,
+  id: '',
+  fullName: '',
+  email: '',
+  phone: '',
+  avatarUrl: '',
+  isLoggedIn: false,
 };
 
 export const DEFAULT_SOCIAL_PLATFORMS: SocialPlatform[] = [
   {
     id: 'instagram',
     platform: 'Instagram',
-    handle: '@alex_vance',
+    handle: '',
     connected: false,
     iconName: 'Instagram',
     description: 'Visual expression & activity patterns',
@@ -26,8 +26,8 @@ export const DEFAULT_SOCIAL_PLATFORMS: SocialPlatform[] = [
   {
     id: 'reddit',
     platform: 'Reddit',
-    handle: 'u/alex_mindful',
-    connected: true,
+    handle: '',
+    connected: false,
     iconName: 'MessageSquare',
     description: 'Community interactions & text sentiment',
     color: '#FF4500',
@@ -35,7 +35,7 @@ export const DEFAULT_SOCIAL_PLATFORMS: SocialPlatform[] = [
   {
     id: 'twitter',
     platform: 'Twitter (X)',
-    handle: '@alex_vance_ai',
+    handle: '',
     connected: false,
     iconName: 'Twitter',
     description: 'Public thoughts & linguistic markers',
@@ -44,7 +44,7 @@ export const DEFAULT_SOCIAL_PLATFORMS: SocialPlatform[] = [
   {
     id: 'facebook',
     platform: 'Facebook',
-    handle: 'Alex Vance',
+    handle: '',
     connected: false,
     iconName: 'Facebook',
     description: 'Social connections & life updates',
@@ -62,7 +62,7 @@ export const DEFAULT_SOCIAL_PLATFORMS: SocialPlatform[] = [
   {
     id: 'linkedin',
     platform: 'LinkedIn',
-    handle: 'in/alexvance-health',
+    handle: '',
     connected: false,
     iconName: 'Linkedin',
     description: 'Professional stress & career sentiment',
@@ -71,7 +71,7 @@ export const DEFAULT_SOCIAL_PLATFORMS: SocialPlatform[] = [
   {
     id: 'github',
     platform: 'GitHub',
-    handle: 'alex-developer',
+    handle: '',
     connected: false,
     iconName: 'Github',
     description: 'Developer nocturnal work rhythms & commit affect',

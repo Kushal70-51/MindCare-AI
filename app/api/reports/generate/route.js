@@ -457,7 +457,7 @@ export async function POST(request) {
               ],
               response_format: { type: 'json_object' },
               temperature: 0.2,
-              max_tokens: 2200,
+              max_tokens: model.includes('qwen') ? 1000 : 2000,
             }),
             signal: controller.signal,
           });

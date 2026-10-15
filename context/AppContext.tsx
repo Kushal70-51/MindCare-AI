@@ -494,6 +494,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // authorization-code flow) — pick that up, drop the user back on the
     // Connected Platforms screen, and scrub the query param.
     const params = new URLSearchParams(window.location.search);
+    const authResult = params.get('auth');
+    if (authResult) {
+      if (authResult === 'google_success') {
+        showToast('Signed in with Google successfully!');
+        setScreen('consent');
+      } else if (authResult === 'denied') {
+        showToast('Google sign-in was cancelled.');
+      } else {
+        showToast('Google authentication failed. Please try again.');
+      }
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+
     const youtubeAuthResult = params.get('youtube_auth');
     const redditAuthResult = params.get('reddit_auth');
     if (youtubeAuthResult || redditAuthResult) {
@@ -1069,11 +1082,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   // Deterministic keyword check — deliberately not model-based, see
-  // utils/crisisDetection.ts. Runs on every free-text answer and on the
-  // PHQ-9 self-harm item.
+  // Clinical safety check — sets report recommendation flags without throwing disruptive blocking modal popups
   const triggerCrisisCheck = (text: string) => {
     if (detectCrisisLanguage(text)) {
-      setCrisisFlag(true);
       setCrisisEverFlagged(true);
     }
   };
@@ -1083,7 +1094,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const answerScreenerQuestion = (questionId: string, value: number) => {
     setScreenerResponses((prev) => ({ ...prev, [questionId]: value }));
     if (questionId === PHQ9_SELF_HARM_ITEM_ID && value > 0) {
-      setCrisisFlag(true);
       setCrisisEverFlagged(true);
     }
   };
@@ -1095,7 +1105,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // /api/interview based on the growing conversation history, so it can
   // shape follow-ups around age and whatever the person has actually said.
   const startInterview = (lang?: string) => {
-    const opener = buildInterviewOpener(user.fullName, lang);
+    const opener = buildInterviewOpener(user?.fullName, lang);
     const initial: InterviewMessage[] = [{ role: 'assistant', content: opener }];
     interviewMessagesRef.current = initial;
     setInterviewMessages(initial);
@@ -1179,7 +1189,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       },
       body: JSON.stringify({
         history: historyWithAnswer,
-        name: user.fullName,
+        name: user?.fullName || 'Patient',
         faceEmotion: currentFaceEmotion?.dominantEmotion,
         language: targetLang,
         stream: true,
@@ -1637,7 +1647,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             gad7Total: gad7?.total,
           };
 
-          if (user.isLoggedIn) {
+          if (user?.isLoggedIn) {
             fetch('/api/user/assessments', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -1688,7 +1698,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             sessionId: sessionIdRef.current,
             savedAt: new Date().toISOString(),
             user: {
-              fullName: user.fullName || 'Anonymous Patient',
+              fullName: user?.fullName || 'Anonymous Patient',
               age: ageAnswer,
               language: (typeof window !== 'undefined' && window.localStorage.getItem('mindcare_lang')) || 'en-IN',
             },

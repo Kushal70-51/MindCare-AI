@@ -6,6 +6,8 @@ import { CheckCircle2, FileText, Download, LayoutDashboard, Sparkles, Loader2, B
 import { motion } from 'framer-motion';
 import confetti from 'canvas-confetti';
 
+import { AssessmentStepper } from '../ui/AssessmentStepper';
+
 export const AssessmentCompletedScreen: React.FC = () => {
   const { setScreen, showToast, report, reportGenerating } = useApp();
 
@@ -24,7 +26,9 @@ export const AssessmentCompletedScreen: React.FC = () => {
   }, []);
 
   return (
-    <div className="w-full max-w-3xl mx-auto px-4 py-10 text-slate-900 text-center flex flex-col items-center justify-center space-y-7">
+    <div className="w-full max-w-3xl mx-auto px-4 py-8 text-slate-900 text-center flex flex-col items-center justify-center space-y-7">
+      {/* 4-Stage Assessment Stepper */}
+      <AssessmentStepper currentScreen="completed" onNavigate={(scr) => setScreen(scr)} className="text-left" />
       {/* Success Badge */}
       <motion.div
         initial={{ scale: 0.5, opacity: 0 }}

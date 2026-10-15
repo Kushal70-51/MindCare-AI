@@ -71,13 +71,22 @@ export const DashboardScreen: React.FC = () => {
               Sign Out
             </button>
           ) : (
-            <button
-              onClick={() => setScreen('login')}
-              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white text-xs font-bold shadow-md shadow-teal-600/20 transition-all flex items-center gap-1.5"
-            >
-              <User className="w-3.5 h-3.5" />
-              <span>Sign In / Register</span>
-            </button>
+            <>
+              <button
+                onClick={() => setScreen('screener')}
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white text-xs font-bold shadow-md shadow-teal-600/20 transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-teal-200" />
+                <span>Take Test (Free)</span>
+              </button>
+              <button
+                onClick={() => setScreen('login')}
+                className="px-4 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-semibold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <User className="w-3.5 h-3.5 text-slate-500" />
+                <span>Sign In / Register</span>
+              </button>
+            </>
           )}
 
           <button
@@ -111,27 +120,79 @@ export const DashboardScreen: React.FC = () => {
           </div>
 
           <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-slate-900">
-            Mental Health Assessment
+            Clinical Mental Health Assessment
           </h1>
 
           <p className="text-sm sm:text-base text-slate-600 leading-relaxed">
-            Our AI assistant will ask a series of questions. Please answer naturally using your microphone or keyboard. Your speech tone, sentiment, and affect will be synthesized into an explainable XAI report.
+            Our evidence-grounded assessment is structured into four cohesive clinical stages. Complete standard questionnaires and an empathetic multimodal AI dialogue with Sage to generate your explainable diagnostic report.
           </p>
 
-          <div className="flex flex-wrap items-center gap-6 pt-2 text-xs font-semibold text-slate-600">
+          {/* 4-Stage Workflow Preview */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-2">
+            <button
+              type="button"
+              onClick={() => setScreen('screener')}
+              className="p-3 rounded-2xl bg-white/90 hover:bg-white border border-teal-100 hover:border-teal-300 shadow-xs text-left transition-all space-y-1 group cursor-pointer"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-teal-600 uppercase tracking-wider">Stage 1</span>
+                <span className="text-[9px] bg-teal-50 text-teal-700 px-1.5 py-0.5 rounded font-bold">Start</span>
+              </div>
+              <p className="text-xs font-bold text-slate-900 group-hover:text-teal-700 transition-colors">Clinical Screeners</p>
+              <p className="text-[10px] text-slate-500">PHQ-9 (Depression) & GAD-7 (Anxiety) standard scales</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setScreen('assessment')}
+              className="p-3 rounded-2xl bg-white/90 hover:bg-white border border-teal-100 hover:border-teal-300 shadow-xs text-left transition-all space-y-1 group cursor-pointer"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-teal-600 uppercase tracking-wider">Stage 2</span>
+                <span className="text-[9px] bg-teal-50 text-teal-700 px-1.5 py-0.5 rounded font-bold">Start</span>
+              </div>
+              <p className="text-xs font-bold text-slate-900 group-hover:text-teal-700 transition-colors">AI Consultation</p>
+              <p className="text-[10px] text-slate-500">Spoken dialogue with Sage, facial & vocal emotion analysis</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setScreen('report')}
+              className="p-3 rounded-2xl bg-white/90 hover:bg-white border border-teal-100 hover:border-teal-300 shadow-xs text-left transition-all space-y-1 group cursor-pointer"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-teal-600 uppercase tracking-wider">Stage 3</span>
+                <span className="text-[9px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold">Fusion</span>
+              </div>
+              <p className="text-xs font-bold text-slate-900 group-hover:text-teal-700 transition-colors">Clinical Synthesis</p>
+              <p className="text-[10px] text-slate-500">Biomarker fusion, sentiment scoring & SHAP calculation</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setScreen('report')}
+              className="p-3 rounded-2xl bg-white/90 hover:bg-white border border-teal-100 hover:border-teal-300 shadow-xs text-left transition-all space-y-1 group cursor-pointer"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-teal-600 uppercase tracking-wider">Stage 4</span>
+                <span className="text-[9px] bg-teal-50 text-teal-700 px-1.5 py-0.5 rounded font-bold">Review</span>
+              </div>
+              <p className="text-xs font-bold text-slate-900 group-hover:text-teal-700 transition-colors">Diagnostic Report</p>
+              <p className="text-[10px] text-slate-500">Full clinical summary, risk factors & telehealth sharing</p>
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-6 pt-1 text-xs font-semibold text-slate-600">
             <div className="flex items-center gap-2">
               <Clock className="w-4 h-4 text-teal-600" />
-              <span>Estimated Time: <strong className="text-slate-900">10–15 Minutes</strong></span>
+              <span>Estimated Duration: <strong className="text-slate-900">5–10 Minutes</strong></span>
             </div>
 
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>HIPAA Encrypted Stream</span>
+              <span>HIPAA-Encrypted Local Session</span>
             </div>
           </div>
         </div>
 
-        {/* Progress Bar & Start CTA */}
+        {/* Progress Bar & Start CTAs */}
         <div className="relative z-10 pt-6 border-t border-teal-200/60 flex flex-col sm:flex-row items-center justify-between gap-6">
           <div className="w-full sm:max-w-xs space-y-2">
             <div className="flex justify-between text-xs font-bold">
@@ -146,13 +207,23 @@ export const DashboardScreen: React.FC = () => {
             </div>
           </div>
 
-          <button
-            onClick={() => setScreen('screener')}
-            className="w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-4 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-black text-base shadow-md hover:shadow-lg hover:scale-[1.02] transition-all"
-          >
-            <Play className="w-5 h-5 fill-white" />
-            <span>Start Assessment</span>
-          </button>
+          <div className="w-full sm:w-auto flex flex-col sm:flex-row items-center gap-3">
+            <button
+              onClick={() => setScreen('assessment')}
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-bold text-xs shadow-xs transition-all"
+            >
+              <Brain className="w-4 h-4 text-teal-600" />
+              <span>Direct AI Consultation</span>
+            </button>
+
+            <button
+              onClick={() => setScreen('screener')}
+              className="w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-3.5 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-black text-sm shadow-md hover:shadow-lg hover:scale-[1.02] transition-all"
+            >
+              <Play className="w-4 h-4 fill-white" />
+              <span>Start Full Assessment (Stage 1)</span>
+            </button>
+          </div>
         </div>
       </motion.div>
 

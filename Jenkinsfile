@@ -24,6 +24,11 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
 
+    triggers {
+        githubPush()
+        pollSCM('H/5 * * * *')
+    }
+
     stages {
         stage('Checkout Code') {
             steps {

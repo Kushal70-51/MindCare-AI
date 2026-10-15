@@ -744,7 +744,7 @@ export async function POST(request) {
       dataSource = twResult.dataSource;
     } else if (profileKey === 'facebook') {
       if (cleanLogin && cleanLogin !== 'anonymous_user') {
-        const isSample = cleanLogin.toLowerCase().includes('alex vance');
+        const isSample = cleanLogin.toLowerCase().includes('sample') || cleanLogin.toLowerCase().includes('demo');
         if (isSample && PLATFORM_MOCK_PROFILES.facebook?.templates) {
           fetchedItems = PLATFORM_MOCK_PROFILES.facebook.templates.map((t, idx) => ({
             id: `fb_sample_${idx + 1}`,

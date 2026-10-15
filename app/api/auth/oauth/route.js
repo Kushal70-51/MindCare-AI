@@ -18,12 +18,12 @@ export async function POST(request) {
 
   const { provider, email, fullName, avatarUrl } = body || {};
 
-  if (!provider || !['google', 'microsoft'].includes(provider.toLowerCase())) {
-    return Response.json({ error: 'Invalid OAuth provider specified.' }, { status: 400 });
+  if (!provider || provider.toLowerCase() !== 'google') {
+    return Response.json({ error: 'Only Google OAuth authentication is supported.' }, { status: 400 });
   }
 
   if (!email) {
-    return Response.json({ error: 'OAuth email address is required.' }, { status: 400 });
+    return Response.json({ error: 'Google account email address is required.' }, { status: 400 });
   }
 
   const cleanEmail = email.toLowerCase().trim();
@@ -31,23 +31,21 @@ export async function POST(request) {
   let user = db.prepare('SELECT * FROM users WHERE email = ?').get(cleanEmail);
 
   const now = new Date().toISOString();
-  const normProvider = provider.toLowerCase();
+  const normProvider = 'google';
 
   if (!user) {
-    // Register new OAuth user in SQLite
-    const userId = `usr_oauth_${crypto.randomBytes(8).toString('hex')}`;
-    const name = fullName || (normProvider === 'google' ? 'Google Account User' : 'Microsoft Account User');
-    const avatar = avatarUrl || (normProvider === 'google'
-      ? 'https://lh3.googleusercontent.com/a/default-user'
-      : 'https://avatar.microsoft.com/avatar');
+    // Register new Google OAuth user in SQLite
+    const userId = `usr_google_${crypto.randomBytes(8).toString('hex')}`;
+    const name = fullName || 'Google Account User';
+    const avatar = avatarUrl || 'https://lh3.googleusercontent.com/a/default-user';
 
     db.prepare(
       'INSERT INTO users (id, full_name, email, password_hash, auth_provider, avatar_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run(userId, name, cleanEmail, 'OAUTH_EXTERNAL_SSO', normProvider, avatar, now);
+    ).run(userId, name, cleanEmail, 'OAUTH_GOOGLE', normProvider, avatar, now);
 
     user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
   } else {
-    // Update existing user record with OAuth provider metadata if needed
+    // Update existing user record with Google OAuth provider metadata
     db.prepare(
       'UPDATE users SET auth_provider = ?, avatar_url = COALESCE(avatar_url, ?) WHERE id = ?'
     ).run(normProvider, avatarUrl || null, user.id);
@@ -71,18 +69,14 @@ export async function POST(request) {
 }
 
 export async function GET() {
+  const clientId = process.env.GOOGLE_CLIENT_ID || process.env.YOUTUBE_OAUTH_CLIENT_ID || 'mindcare-google-oauth-active';
   return Response.json({
     success: true,
     providers: {
       google: {
         active: true,
         name: 'Google Workspace / Gmail SSO',
-        clientId: process.env.GOOGLE_CLIENT_ID || 'mindcare-google-oauth-active',
-      },
-      microsoft: {
-        active: true,
-        name: 'Microsoft Azure AD / Outlook SSO',
-        clientId: process.env.MICROSOFT_CLIENT_ID || 'mindcare-ms-oauth-active',
+        clientId,
       },
     },
   });

@@ -3,9 +3,8 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useApp } from '../../context/AppContext';
-import { Mail, Lock, LogIn, ArrowRight, ShieldCheck, Stethoscope } from 'lucide-react';
+import { Mail, Lock, LogIn, ArrowRight, ShieldCheck, Stethoscope, Sparkles, ClipboardList } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { OAuthAuthModal } from '../ui/OAuthAuthModal';
 
 export const LoginScreen: React.FC = () => {
   const { setScreen, loginUser, showToast } = useApp();
@@ -15,7 +14,6 @@ export const LoginScreen: React.FC = () => {
   const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [oauthProvider, setOauthProvider] = useState<'Google' | 'Microsoft' | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,10 +42,6 @@ export const LoginScreen: React.FC = () => {
     }
   };
 
-  const handleOAuthClick = (provider: 'Google' | 'Microsoft') => {
-    setOauthProvider(provider);
-  };
-
   return (
     <div className="w-full max-w-md mx-auto px-4 py-8 text-slate-900">
       <motion.div
@@ -64,6 +58,35 @@ export const LoginScreen: React.FC = () => {
           <p className="text-xs text-slate-500">
             Access your encrypted AI mental health assessment records.
           </p>
+        </div>
+
+        {/* Guest Take-Test Option (No Login Needed) */}
+        <div className="p-4 rounded-2xl bg-gradient-to-br from-teal-50 via-emerald-50 to-teal-50 border border-teal-200/90 space-y-2 text-center shadow-xs">
+          <div className="flex items-center justify-center gap-1.5 text-xs font-black text-teal-900">
+            <Sparkles className="w-4 h-4 text-teal-600" />
+            <span>Take Test Without Logging In</span>
+          </div>
+          <p className="text-xs text-slate-600 leading-relaxed">
+            You don't need an account to take the standardized clinical screeners (PHQ-9 &amp; GAD-7) and AI voice consultation.
+          </p>
+          <button
+            type="button"
+            onClick={() => setScreen('screener')}
+            className="w-full py-2.5 px-4 rounded-xl bg-teal-600 hover:bg-teal-700 active:scale-[0.99] text-white font-bold text-xs shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <ClipboardList className="w-4 h-4" />
+            <span>Continue as Guest &amp; Start Free Test</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="relative flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-slate-200" />
+          </div>
+          <span className="relative px-3 bg-white text-[10px] uppercase tracking-wider font-semibold text-slate-400">
+            Or sign in to your saved account
+          </span>
         </div>
 
         {error && (
@@ -83,7 +106,7 @@ export const LoginScreen: React.FC = () => {
               <input
                 type="email"
                 required
-                placeholder="alex.vance@mindcare.ai"
+                placeholder="name@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-teal-500"
@@ -146,12 +169,14 @@ export const LoginScreen: React.FC = () => {
           </span>
         </div>
 
-        {/* OAuth Buttons */}
-        <div className="space-y-2.5">
+        {/* Google OAuth Button */}
+        <div>
           <button
             type="button"
-            onClick={() => handleOAuthClick('Google')}
-            className="w-full flex items-center justify-center gap-3 p-2.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-xs font-semibold text-slate-700 transition-colors"
+            onClick={() => {
+              window.location.href = '/api/auth/google/login';
+            }}
+            className="w-full flex items-center justify-center gap-3 p-3 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-xs font-semibold text-slate-700 shadow-xs hover:shadow-sm transition-all cursor-pointer"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
               <path
@@ -172,20 +197,6 @@ export const LoginScreen: React.FC = () => {
               />
             </svg>
             <span>Continue with Google</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleOAuthClick('Microsoft')}
-            className="w-full flex items-center justify-center gap-3 p-2.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-xs font-semibold text-slate-700 transition-colors"
-          >
-            <svg className="w-4 h-4" viewBox="0 0 23 23">
-              <path fill="#f35325" d="M1 1h10v10H1z" />
-              <path fill="#81bc06" d="M12 1h10v10H1z" />
-              <path fill="#05a6f0" d="M1 12h10v10H1z" />
-              <path fill="#ffba08" d="M12 12h10v10H12z" />
-            </svg>
-            <span>Continue with Microsoft</span>
           </button>
         </div>
 
@@ -209,18 +220,6 @@ export const LoginScreen: React.FC = () => {
           <span>Are you a doctor? Sign in to the Provider Portal</span>
         </Link>
       </motion.div>
-
-      {/* OAuth Modal */}
-      <OAuthAuthModal
-        isOpen={Boolean(oauthProvider)}
-        provider={oauthProvider || 'Google'}
-        onClose={() => setOauthProvider(null)}
-        onAuthenticated={(userData) => {
-          loginUser(userData);
-          showToast(`Authenticated with ${oauthProvider} SSO`);
-          setScreen('consent');
-        }}
-      />
     </div>
   );
 };

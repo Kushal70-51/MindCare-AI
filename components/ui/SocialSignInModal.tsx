@@ -84,27 +84,19 @@ export const SocialSignInModal: React.FC<SocialSignInModalProps> = ({
     ],
     reddit: [
       { label: 'u/spez', value: 'u/spez', desc: 'Official Reddit User Activity' },
-      { label: 'u/alex_mindful', value: 'u/alex_mindful', desc: 'Sample Wellness Handle' },
+      { label: 'u/mindful_user', value: 'u/mindful_user', desc: 'Sample Wellness Handle' },
       { label: 'r/mentalhealth', value: 'r/mentalhealth', desc: 'Real Peer Support Stream' },
     ],
     github: [
       { label: 'torvalds', value: 'torvalds', desc: 'Real Linux Kernel Commits' },
       { label: 'shadcn', value: 'shadcn', desc: 'Real UI Framework Commits' },
-      { label: 'alex-developer', value: 'alex-developer', desc: 'Knowledge Worker Stream' },
     ],
     twitter: [
-      { label: '@alex_vance_ai', value: '@alex_vance_ai', desc: 'Sample Public Feed' },
       { label: '@sama', value: '@sama', desc: 'Technology & AI Activity' },
     ],
-    instagram: [
-      { label: '@alex_vance', value: '@alex_vance', desc: 'Visual Lifestyle Log' },
-    ],
-    linkedin: [
-      { label: 'in/alexvance-health', value: 'in/alexvance-health', desc: 'Occupational Activity' },
-    ],
-    facebook: [
-      { label: 'Alex Vance (Sample)', value: 'Alex Vance', desc: 'Sample Interpersonal Support Network' },
-    ],
+    instagram: [],
+    linkedin: [],
+    facebook: [],
   };
 
   const handleSelectPreset = (value: string) => {
@@ -688,8 +680,8 @@ export const SocialSignInModal: React.FC<SocialSignInModalProps> = ({
                         : platform.id === 'github'
                         ? 'e.g. torvalds or username'
                         : platform.id === 'facebook'
-                        ? 'e.g. Alex Vance, facebook.com/your.name, or username'
-                        : 'e.g. alex.vance or @handle'
+                        ? 'e.g. facebook.com/your.name or username'
+                        : 'e.g. username or @handle'
                     }
                     disabled={loading}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-teal-500 font-mono transition-colors disabled:opacity-50"

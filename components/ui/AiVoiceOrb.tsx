@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 
 interface AiVoiceOrbProps {
   mode?: 'idle' | 'listening' | 'speaking' | 'thinking';
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
 }
 
 export const AiVoiceOrb: React.FC<AiVoiceOrbProps> = ({
@@ -13,8 +13,9 @@ export const AiVoiceOrb: React.FC<AiVoiceOrbProps> = ({
   size = 'md',
 }) => {
   const sizeClasses = {
-    sm: 'w-28 h-28',
-    md: 'w-52 h-52 sm:w-64 sm:h-64',
+    xs: 'w-11 h-11',
+    sm: 'w-14 h-14',
+    md: 'w-44 h-44 sm:w-52 sm:h-52',
     lg: 'w-64 h-64 sm:w-80 sm:h-80',
   };
 
@@ -32,14 +33,15 @@ export const AiVoiceOrb: React.FC<AiVoiceOrbProps> = ({
   };
 
   const isVoiceActive = mode === 'speaking' || mode === 'listening';
+  const isCompact = size === 'xs' || size === 'sm';
 
   return (
-    <div className={`relative flex items-center justify-center ${sizeClasses[size]}`}>
+    <div className={`relative flex items-center justify-center shrink-0 ${sizeClasses[size] || sizeClasses.md}`}>
       {/* Outer Glow Halo - Only pulses when active voice speaking */}
       {isVoiceActive && (
         <motion.div
           animate={{
-            scale: mode === 'speaking' ? [1.1, 1.35, 1.1] : [1.05, 1.15, 1.05],
+            scale: mode === 'speaking' ? (isCompact ? [1.1, 1.25, 1.1] : [1.1, 1.35, 1.1]) : [1.05, 1.15, 1.05],
             opacity: mode === 'listening' ? [0.4, 0.7, 0.4] : [0.5, 0.8, 0.5],
           }}
           transition={{
@@ -47,7 +49,9 @@ export const AiVoiceOrb: React.FC<AiVoiceOrbProps> = ({
             repeat: Infinity,
             ease: 'easeInOut',
           }}
-          className={`absolute inset-0 rounded-full bg-gradient-to-r ${getOrbGradient()} blur-2xl opacity-60`}
+          className={`absolute inset-0 rounded-full bg-gradient-to-r ${getOrbGradient()} ${
+            isCompact ? 'blur-md opacity-50' : 'blur-2xl opacity-60'
+          }`}
         />
       )}
 
@@ -56,13 +60,13 @@ export const AiVoiceOrb: React.FC<AiVoiceOrbProps> = ({
         <>
           <motion.div
             initial={{ scale: 0.8, opacity: 0.8 }}
-            animate={{ scale: 1.5, opacity: 0 }}
+            animate={{ scale: isCompact ? 1.3 : 1.5, opacity: 0 }}
             transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
             className="absolute inset-0 rounded-full border border-emerald-400/50"
           />
           <motion.div
             initial={{ scale: 0.8, opacity: 0.8 }}
-            animate={{ scale: 1.5, opacity: 0 }}
+            animate={{ scale: isCompact ? 1.3 : 1.5, opacity: 0 }}
             transition={{ duration: 2, repeat: Infinity, ease: 'easeOut', delay: 0.6 }}
             className="absolute inset-0 rounded-full border border-teal-300/40"
           />
@@ -73,31 +77,35 @@ export const AiVoiceOrb: React.FC<AiVoiceOrbProps> = ({
       <motion.div
         animate={{ rotate: isVoiceActive ? 360 : 0 }}
         transition={{ duration: mode === 'thinking' ? 4 : 12, repeat: Infinity, ease: 'linear' }}
-        className="absolute inset-[-8%] rounded-full border border-white/20 p-1"
+        className="absolute inset-[-6%] rounded-full border border-white/20 p-0.5"
       >
-        <div className="w-3 h-3 rounded-full bg-teal-400 shadow-[0_0_12px_#14b8a6]" />
+        <div className={`${isCompact ? 'w-1.5 h-1.5' : 'w-3 h-3'} rounded-full bg-teal-400 shadow-[0_0_8px_#14b8a6]`} />
       </motion.div>
 
       {/* Main Glassmorphic Sphere */}
       <motion.div
         animate={{
-          scale: mode === 'speaking' ? [1, 1.06, 0.98, 1.04, 1] : [1, 1.02, 1],
+          scale: mode === 'speaking' ? [1, 1.05, 0.98, 1.03, 1] : [1, 1.02, 1],
         }}
         transition={{
           duration: mode === 'speaking' ? 1.8 : 4,
           repeat: Infinity,
           ease: 'easeInOut',
         }}
-        className={`relative w-full h-full rounded-full bg-gradient-to-tr ${getOrbGradient()} shadow-2xl p-1 overflow-hidden backdrop-blur-xl border-2 border-white/40 flex items-center justify-center`}
+        className={`relative w-full h-full rounded-full bg-gradient-to-tr ${getOrbGradient()} shadow-lg p-0.5 overflow-hidden backdrop-blur-xl border border-white/40 flex items-center justify-center`}
       >
-        {/* Central Audio Waves / Pulse Bars - ONLY bounce when mode === 'speaking' */}
-        <div className="relative z-10 flex items-center justify-center gap-2 h-16">
+        {/* Central Audio Waves / Pulse Bars */}
+        <div className={`relative z-10 flex items-center justify-center ${isCompact ? 'gap-0.5 h-6' : 'gap-2 h-16'}`}>
           {[0, 1, 2, 3, 4].map((i) => (
             <motion.span
               key={i}
               animate={
                 mode === 'speaking'
-                  ? { height: ['12px', '48px', '20px', '54px', '12px'] }
+                  ? isCompact
+                    ? { height: ['4px', '16px', '7px', '18px', '4px'] }
+                    : { height: ['12px', '48px', '20px', '54px', '12px'] }
+                  : isCompact
+                  ? { height: ['3px', '5px', '3px'] }
                   : { height: ['10px', '12px', '10px'] }
               }
               transition={{
@@ -106,16 +114,17 @@ export const AiVoiceOrb: React.FC<AiVoiceOrbProps> = ({
                 delay: i * 0.12,
                 ease: 'easeInOut',
               }}
-              className={`w-2 rounded-full shadow-[0_0_10px_rgba(255,255,255,0.8)] ${
-                mode === 'speaking' ? 'bg-white' : 'bg-slate-400/60'
-              }`}
+              className={`${isCompact ? 'w-1 rounded-full' : 'w-2 rounded-full'} ${
+                isCompact ? 'shadow-[0_0_4px_rgba(255,255,255,0.8)]' : 'shadow-[0_0_10px_rgba(255,255,255,0.8)]'
+              } ${mode === 'speaking' ? 'bg-white' : 'bg-slate-400/60'}`}
             />
           ))}
         </div>
 
         {/* Glass Specular Reflection Highlight */}
-        <div className="absolute top-2 left-4 w-1/2 h-1/3 rounded-full bg-gradient-to-b from-white/50 to-transparent blur-[2px] pointer-events-none" />
+        <div className="absolute top-1 left-2 w-1/2 h-1/3 rounded-full bg-gradient-to-b from-white/50 to-transparent blur-[1px] pointer-events-none" />
       </motion.div>
     </div>
   );
 };
+

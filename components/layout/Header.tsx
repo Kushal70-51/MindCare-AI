@@ -8,6 +8,9 @@ import {
   Type,
   Activity,
   Menu,
+  Sparkles,
+  ClipboardList,
+  Home,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -71,6 +74,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileSidebar }) => {
         <div
           onClick={() => setScreen('welcome')}
           className="flex items-center gap-2.5 cursor-pointer group"
+          title="Return to Landing Page / Home"
         >
           <div className="relative p-2 rounded-2xl bg-teal-600 text-white shadow-sm group-hover:scale-105 transition-transform">
             <Brain className="w-6 h-6" />
@@ -89,11 +93,68 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileSidebar }) => {
         </div>
 
         {/* Current Active Section Badge */}
-        <div className="hidden lg:flex items-center gap-2 ml-4 pl-4 border-l border-slate-200">
+        <div className="hidden xl:flex items-center gap-2 ml-3 pl-3 border-l border-slate-200">
           <Activity className="w-4 h-4 text-teal-600" />
           <span className="text-xs font-semibold text-slate-500">
             {getScreenTitle()}
           </span>
+        </div>
+
+        {/* Direct Test & Assessment Navigation Links (Available to All Users Without Login) */}
+        <div className="hidden md:flex items-center gap-1 ml-2 sm:ml-4 pl-2 sm:pl-4 border-l border-slate-200">
+          <button
+            type="button"
+            onClick={() => setScreen('welcome')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              screen === 'welcome'
+                ? 'bg-teal-50 text-teal-800 border border-teal-200 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+            title="Return to Landing Page"
+          >
+            <Home className="w-3.5 h-3.5 text-teal-600" />
+            <span>Home</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setScreen('screener')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              screen === 'screener'
+                ? 'bg-teal-50 text-teal-800 border border-teal-200 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+            title="Standardized PHQ-9 & GAD-7 Psychiatric Screening Tests"
+          >
+            <ClipboardList className="w-3.5 h-3.5 text-teal-600" />
+            <span>Clinical Tests</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setScreen('assessment')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              screen === 'assessment'
+                ? 'bg-teal-50 text-teal-800 border border-teal-200 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+            title="AI Voice & Facial Affect Consultation"
+          >
+            <Brain className="w-3.5 h-3.5 text-teal-600" />
+            <span>AI Consultation</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setScreen('dashboard')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              screen === 'dashboard'
+                ? 'bg-teal-50 text-teal-800 border border-teal-200 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <span>Dashboard</span>
+          </button>
         </div>
       </div>
 
@@ -165,7 +226,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileSidebar }) => {
           </button>
         </div>
 
-        {/* User Badge */}
+        {/* User Badge / Guest Action */}
         {user.isLoggedIn ? (
           <div
             onClick={() => setScreen('dashboard')}
@@ -179,20 +240,32 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileSidebar }) => {
               />
             ) : (
               <div className="w-7 h-7 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold text-xs">
-                {user.fullName[0]}
+                {user.fullName ? user.fullName[0] : 'U'}
               </div>
             )}
             <span className="text-xs font-semibold text-slate-700 hidden md:inline">
-              {user.fullName.split(' ')[0]}
+              {(user.fullName || 'User').split(' ')[0]}
             </span>
           </div>
         ) : (
-          <button
-            onClick={() => setScreen('login')}
-            className="px-4 py-1.5 rounded-full bg-teal-600 hover:bg-teal-700 text-white font-semibold text-xs transition-all"
-          >
-            Sign In
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setScreen('screener')}
+              className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-bold text-xs shadow-sm hover:shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+              title="Start free clinical tests without logging in"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-teal-200" />
+              <span>Take Test (Free)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setScreen('login')}
+              className="px-3.5 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 font-semibold text-xs transition-all cursor-pointer"
+            >
+              Sign In
+            </button>
+          </div>
         )}
       </div>
     </header>

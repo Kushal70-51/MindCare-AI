@@ -6,7 +6,19 @@ import { useVoiceEmotion } from '../../hooks/useVoiceEmotion';
 import { AiVoiceOrb } from '../ui/AiVoiceOrb';
 import { CameraPreview } from '../ui/CameraPreview';
 import { AudioVisualizer } from '../ui/AudioVisualizer';
+import { AssessmentStepper } from '../ui/AssessmentStepper';
 import { buildInterviewOpener } from '../../utils/mockData';
+
+export const CLINICAL_DOMAINS_MAP = [
+  'Emotional Rapport & Age Baseline',
+  'Sleep Architecture & Circadian Rest',
+  'Energy, Fatigue & Daily Vitality',
+  'Acute Stressors & Cognitive Pressure',
+  'Anxiety & Somatic Tension',
+  'Affect & Depressive Symptoms',
+  'Social Connectedness & Support',
+  'Coping Mechanisms & Self-Worth',
+];
 import {
   Mic,
   MicOff,
@@ -25,6 +37,11 @@ import {
   User,
   Check,
   ArrowRight,
+  ArrowDown,
+  Shield,
+  Activity,
+  Radio,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -114,21 +131,40 @@ export const AssessmentInterfaceScreen: React.FC = () => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Language Selection Pre-Step
-  const [hasSelectedLanguage, setHasSelectedLanguage] = useState<boolean>(false);
+  // Language Selection Pre-Step — if interview is already active in this session, don't trap user
+  const [hasSelectedLanguage, setHasSelectedLanguage] = useState<boolean>(() => {
+    if (interviewTurnNumber > 0) return true;
+    return false;
+  });
   const [userInput, setUserInput] = useState('');
   const [interimDisplay, setInterimDisplay] = useState('');
   const [aiMode, setAiMode] = useState<'speaking' | 'listening' | 'thinking'>('speaking');
   const [transcript, setTranscript] = useState<Array<{ sender: 'ai' | 'user'; text: string; time: string; moodTag?: string }>>([]);
   const [isListening, setIsListening] = useState(false);
   const [isFullScreenVideo, setIsFullScreenVideo] = useState(false);
-  const [showConsentModal, setShowConsentModal] = useState(false);
 
-  // Multilingual & Accent Settings
-  const [selectedLang, setSelectedLang] = useState<string>('en-IN');
+  // Multilingual & Accent Settings — load persisted choice if available
+  const [selectedLang, setSelectedLang] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = window.localStorage.getItem('mindcare_lang');
+        if (saved && SUPPORTED_LANGUAGES.some((l) => l.code === saved)) {
+          return saved;
+        }
+      } catch (e) {}
+    }
+    return 'en-IN';
+  });
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [autoSubmit, setAutoSubmit] = useState<boolean>(true);
   const [countdown, setCountdown] = useState<number | null>(null);
+
+  // Auto-scroll and Chat Scroll Management
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const [autoScroll, setAutoScroll] = useState<boolean>(true);
+  const [isUserScrolledUp, setIsUserScrolledUp] = useState<boolean>(false);
+  const [newMessagesWhileScrolled, setNewMessagesWhileScrolled] = useState<number>(0);
+  const lastTranscriptLengthRef = useRef<number>(0);
 
   const isManuallyEditedRef = useRef<boolean>(false);
   const sessionPrefixRef = useRef<string>('');
@@ -148,10 +184,65 @@ export const AssessmentInterfaceScreen: React.FC = () => {
     setUserInput(val);
   };
 
-  // Auto-scroll chat smoothly whenever transcript changes or typing begins
+  // Dedicated container-level scroll handler that never jitters the outer page window
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    const el = chatContainerRef.current;
+    if (!el) {
+      messagesEndRef.current?.scrollIntoView({ behavior });
+      return;
+    }
+    el.scrollTo({
+      top: el.scrollHeight,
+      behavior,
+    });
+    setIsUserScrolledUp(false);
+    setNewMessagesWhileScrolled(0);
+  };
+
+  // Real-time scroll detector: tracks if user has scrolled up to read earlier history
+  const handleChatScroll = () => {
+    const el = chatContainerRef.current;
+    if (!el) return;
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
+    const scrolledUp = distanceFromBottom > 60;
+    setIsUserScrolledUp(scrolledUp);
+    if (!scrolledUp) {
+      setNewMessagesWhileScrolled(0);
+    }
+  };
+
+  const toggleAutoScroll = () => {
+    setAutoScroll((prev) => {
+      const next = !prev;
+      if (next) {
+        scrollToBottom('smooth');
+        showToast('Auto-scroll turned ON');
+      } else {
+        showToast('Auto-scroll PAUSED — browse chat freely');
+      }
+      return next;
+    });
+  };
+
+  // Smart auto-scroll: smooth for finalized responses, instant for live streaming tokens, pauses when user scrolls up
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [transcript, aiMode, interimDisplay, streamingAiText]);
+    if (!autoScroll) return;
+
+    if (isUserScrolledUp) {
+      if (transcript.length > lastTranscriptLengthRef.current) {
+        setNewMessagesWhileScrolled((prev) => prev + (transcript.length - lastTranscriptLengthRef.current));
+      }
+      lastTranscriptLengthRef.current = transcript.length;
+      return;
+    }
+
+    lastTranscriptLengthRef.current = transcript.length;
+
+    // Use instant 'auto' during active token streaming or live interim speech to prevent stutter
+    const behavior: ScrollBehavior = (streamingAiText || interimDisplay) ? 'auto' : 'smooth';
+    scrollToBottom(behavior);
+  }, [transcript, streamingAiText, interimDisplay, autoScroll, isUserScrolledUp]);
 
   // Reliable helper to ensure speech synthesis voices are populated in Chromium/Edge
   const ensureVoicesReady = (): Promise<SpeechSynthesisVoice[]> => {
@@ -204,10 +295,24 @@ export const AssessmentInterfaceScreen: React.FC = () => {
   // Records audio samples per question for wav2vec2 acoustic tone classification
   useVoiceEmotion(aiMode === 'listening' && !micMuted, interviewTurnNumber, recordVoiceEmotion);
 
-  // Start interview with selected language opener once language is confirmed
+  // Start interview with selected language opener once language is confirmed (fallback if not triggered via handleStartConsultation)
   useEffect(() => {
-    if (hasSelectedLanguage) {
+    if (hasSelectedLanguage && transcript.length === 0) {
+      const opener = buildInterviewOpener(user?.fullName, selectedLang);
+      setTranscript([
+        {
+          sender: 'ai',
+          text: opener,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ]);
       startInterview(selectedLang);
+      lastSpokenTextRef.current = opener;
+      setTimeout(() => {
+        speakText(opener, selectedLang, () => {
+          setTimeout(() => setAiMode('listening'), 500);
+        });
+      }, 60);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasSelectedLanguage]);
@@ -308,6 +413,9 @@ export const AssessmentInterfaceScreen: React.FC = () => {
 
     try {
       window.speechSynthesis.cancel();
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
     } catch (e) {}
 
     setAiMode('speaking');
@@ -446,8 +554,8 @@ export const AssessmentInterfaceScreen: React.FC = () => {
   useEffect(() => {
     if (!currentAiQuestion) return;
 
-    // Avoid duplicate speak if handleLanguageChange already dispatched this exact text
-    if (lastSpokenTextRef.current === currentAiQuestion && aiMode === 'speaking') {
+    // Avoid duplicate speak if already spoken or currently speaking this exact question
+    if (lastSpokenTextRef.current === currentAiQuestion && (aiMode === 'speaking' || transcript.some((t) => t.text === currentAiQuestion))) {
       return;
     }
 
@@ -508,12 +616,13 @@ export const AssessmentInterfaceScreen: React.FC = () => {
   };
 
   const handleSkipAiSpeech = () => {
+    isSpeakingRef.current = false;
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       try {
         window.speechSynthesis.cancel();
       } catch (e) {}
     }
-    setTimeout(() => setAiMode('listening'), 300);
+    setTimeout(() => setAiMode('listening'), 200);
   };
 
   // Continuous Speech-to-Text (STT) Engine with Active Language Support, Smart Merging & Robust Auto-Recovery
@@ -721,98 +830,217 @@ export const AssessmentInterfaceScreen: React.FC = () => {
 
   const currentLangObj = SUPPORTED_LANGUAGES.find((l) => l.code === selectedLang) || SUPPORTED_LANGUAGES[0];
 
+  const handlePreviewVoice = (e: React.MouseEvent, langCode: string) => {
+    e.stopPropagation();
+    const sampleText =
+      langCode.startsWith('hi')
+        ? 'नमस्ते! मैं सेज हूँ, आपकी क्लिनिकल साथी। मैं आपकी सहायता के लिए तैयार हूँ।'
+        : langCode.startsWith('mr')
+        ? 'नमस्कार! मी सेज आहे, तुमची क्लिनिकल सोबती. मी तुमच्याशी बोलायला तयार आहे.'
+        : 'Hello! I am Sage, your clinical companion. I am ready to begin.';
+    speakText(sampleText, langCode);
+  };
+
+  const handleStartConsultation = () => {
+    try {
+      // 1. Immediately cancel any running speech preview (e.g. from Listen Voice Sample)
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel();
+          if (window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+          }
+        } catch (e) {}
+      }
+      isSpeakingRef.current = false;
+
+      // 2. Persist chosen language in localStorage
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem('mindcare_lang', selectedLang);
+        } catch (e) {}
+      }
+
+      // 3. Build the clinical opener in the chosen language
+      const opener = buildInterviewOpener(user?.fullName, selectedLang);
+
+      // 4. Initialize interview in AppContext
+      try {
+        startInterview(selectedLang);
+      } catch (err) {
+        console.warn('Could not initialize interview context:', err);
+      }
+
+      // 5. Immediately seed transcript so chat is NEVER blank or stuck
+      setTranscript([
+        {
+          sender: 'ai',
+          text: opener,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ]);
+      lastSpokenTextRef.current = opener;
+
+      // 6. Transition to the main assessment consultation interface
+      setHasSelectedLanguage(true);
+
+      // 7. Speak opener with a safe 60ms delay (avoids Chromium cancel() queue lock)
+      setTimeout(() => {
+        try {
+          speakText(opener, selectedLang, () => {
+            setTimeout(() => {
+              setAiMode('listening');
+            }, 500);
+          });
+        } catch (e) {
+          console.warn('TTS speech failed:', e);
+          setAiMode('listening');
+        }
+      }, 60);
+    } catch (outerErr) {
+      console.error('Error starting consultation:', outerErr);
+      // Guarantee transition to consultation interface even if unexpected error occurs
+      setHasSelectedLanguage(true);
+    }
+  };
+
   if (!hasSelectedLanguage) {
     const activeLangInfo = SUPPORTED_LANGUAGES.find((l) => l.code === selectedLang) || SUPPORTED_LANGUAGES[0];
     return (
-      <div className="w-full max-w-4xl mx-auto px-4 py-8 text-slate-900 min-h-[calc(100vh-100px)] flex flex-col justify-center">
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-10 shadow-xl space-y-8"
-        >
-          {/* Header */}
-          <div className="flex flex-col items-center text-center space-y-3">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-teal-50 border border-teal-200 text-teal-700 text-xs font-extrabold tracking-wide uppercase">
-              <Globe className="w-4 h-4 text-teal-600" />
-              <span>Multilingual Consultation Setup</span>
+      <div className="w-full h-full min-h-0 overflow-y-auto">
+        <div className="w-full max-w-4xl mx-auto px-4 py-6 sm:py-8 text-slate-900 flex flex-col justify-center space-y-6">
+          {/* 4-Stage Assessment Stepper */}
+          <AssessmentStepper currentScreen="assessment" onNavigate={(scr) => setScreen(scr)} />
+
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white border border-slate-200/90 rounded-3xl p-5 sm:p-8 md:p-10 shadow-xl space-y-6 sm:space-y-8 relative overflow-hidden backdrop-blur-sm"
+          >
+            {/* Subtle Top Gradient Accent */}
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-teal-500 via-emerald-400 to-cyan-500" />
+
+            {/* Header */}
+            <div className="flex flex-col items-center text-center space-y-2.5 pt-1">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-teal-50 border border-teal-200 text-teal-800 text-xs font-extrabold tracking-wide uppercase shadow-2xs">
+                <Globe className="w-4 h-4 text-teal-600" />
+                <span>Multilingual Consultation Setup · Stage 2</span>
+              </div>
+              <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
+                Choose Your Preferred Language
+              </h1>
+              <p className="text-xs sm:text-sm text-slate-500 max-w-xl leading-relaxed">
+                Sage AI Companion conducts in-depth clinical psychiatric dialogues natively in English, Hindi, and Marathi with high-fidelity speech synthesis.
+              </p>
             </div>
-            <h1 className="text-2xl sm:text-4xl font-black text-slate-900">
-              Choose Your Preferred Language
-            </h1>
-            <p className="text-sm text-slate-500 max-w-xl leading-relaxed">
-              Sage AI Companion conducts spoken clinical check-ins natively in English, Hindi, and Marathi. Please select your preferred language to begin.
-            </p>
-          </div>
 
-          {/* 3 Interactive Language Option Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {SUPPORTED_LANGUAGES.map((lang) => {
-              const isSelected = selectedLang === lang.code;
-              return (
-                <button
-                  key={lang.code}
-                  type="button"
-                  onClick={() => setSelectedLang(lang.code)}
-                  className={`p-6 rounded-2xl border-2 text-left flex flex-col justify-between gap-4 transition-all relative overflow-hidden ${
-                    isSelected
-                      ? 'border-teal-600 bg-teal-50/50 shadow-lg shadow-teal-600/10 scale-[1.02]'
-                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-4xl">{lang.flag}</span>
-                    {isSelected && (
-                      <span className="w-6 h-6 rounded-full bg-teal-600 text-white flex items-center justify-center shadow-sm">
-                        <Check className="w-3.5 h-3.5" />
-                      </span>
-                    )}
+            {/* 3 Interactive Language Option Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4">
+              {SUPPORTED_LANGUAGES.map((lang) => {
+                const isSelected = selectedLang === lang.code;
+                return (
+                  <div
+                    key={lang.code}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedLang(lang.code)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSelectedLang(lang.code);
+                      }
+                    }}
+                    className={`p-5 sm:p-6 rounded-2xl border-2 text-left flex flex-col justify-between gap-3.5 transition-all relative overflow-hidden cursor-pointer select-none ${
+                      isSelected
+                        ? 'border-teal-600 bg-teal-50/70 shadow-lg shadow-teal-600/10 scale-[1.01] ring-2 ring-teal-500/20'
+                        : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/80 shadow-xs'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-3xl sm:text-4xl filter drop-shadow-sm">{lang.flag}</span>
+                      {isSelected ? (
+                        <span className="w-7 h-7 rounded-full bg-teal-600 text-white flex items-center justify-center shadow-sm">
+                          <Check className="w-4 h-4 stroke-[3]" />
+                        </span>
+                      ) : (
+                        <span className="w-7 h-7 rounded-full bg-slate-100 border border-slate-200 text-slate-400 flex items-center justify-center text-xs">
+                          ○
+                        </span>
+                      )}
+                    </div>
+
+                    <div>
+                      <h3 className="text-lg sm:text-xl font-black text-slate-900">{lang.nativeLabel}</h3>
+                      <p className="text-xs font-bold text-teal-700">{lang.name}</p>
+                      <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">{lang.hint}</p>
+                    </div>
+
+                    <div className="space-y-2 pt-2 border-t border-slate-200/80">
+                      <div className="text-[11px] font-medium text-teal-800 bg-white border border-teal-100 px-2.5 py-1 rounded-xl truncate shadow-2xs">
+                        Preview: "{buildInterviewOpener(user?.fullName, lang.code).slice(0, 32)}..."
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={(e) => handlePreviewVoice(e, lang.code)}
+                          className="flex-1 text-[11px] font-bold text-slate-600 hover:text-teal-700 hover:bg-teal-50 py-1.5 px-2 rounded-lg border border-slate-200 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <Volume2 className="w-3.5 h-3.5 text-teal-600" />
+                          <span>Voice Sample</span>
+                        </button>
+                        {isSelected && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStartConsultation();
+                            }}
+                            className="text-[11px] font-bold bg-teal-600 hover:bg-teal-700 text-white py-1.5 px-2.5 rounded-lg shadow-xs flex items-center gap-1 transition-all cursor-pointer"
+                            title="Continue directly with this language"
+                          >
+                            <span>Start</span>
+                            <ArrowRight className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
+                );
+              })}
+            </div>
 
-                  <div>
-                    <h3 className="text-xl font-black text-slate-900">{lang.nativeLabel}</h3>
-                    <p className="text-xs font-semibold text-slate-500">{lang.name}</p>
-                    <p className="text-xs text-slate-600 mt-2 leading-relaxed">{lang.hint}</p>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-200/60 text-[11px] font-medium text-teal-800 bg-teal-50/90 px-3 py-1.5 rounded-xl truncate">
-                    Preview: "{buildInterviewOpener(user?.fullName, lang.code).slice(0, 42)}..."
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Start Consultation Action Button */}
-          <div className="flex flex-col items-center gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => {
-                setHasSelectedLanguage(true);
-              }}
-              className="w-full sm:w-auto px-10 py-4 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-base shadow-lg shadow-teal-600/25 hover:shadow-teal-600/40 transition-all flex items-center justify-center gap-3"
-            >
-              <Sparkles className="w-5 h-5 text-teal-200" />
-              <span>
-                Start Consultation in {activeLangInfo.nativeLabel}
-              </span>
-              <ArrowRight className="w-5 h-5" />
-            </button>
-            <p className="text-xs text-slate-400">
-              You can also switch your consultation language at any time during the interview.
-            </p>
-          </div>
-        </motion.div>
+            {/* Start Consultation Action Button */}
+            <div className="flex flex-col items-center gap-2.5 pt-2">
+              <button
+                type="button"
+                id="btn-start-consultation"
+                onClick={handleStartConsultation}
+                className="w-full sm:w-auto px-8 sm:px-12 py-3.5 sm:py-4 rounded-2xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 active:scale-[0.98] text-white font-black text-base shadow-lg shadow-teal-600/25 hover:shadow-teal-600/40 transition-all flex items-center justify-center gap-3 cursor-pointer"
+              >
+                <Sparkles className="w-5 h-5 text-teal-200" />
+                <span>
+                  Start Consultation in {activeLangInfo.nativeLabel}
+                </span>
+                <ArrowRight className="w-5 h-5" />
+              </button>
+              <p className="text-xs text-slate-400 text-center">
+                You can seamlessly switch your consultation language anytime during the dialogue.
+              </p>
+            </div>
+          </motion.div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="w-full max-w-[1600px] mx-auto px-3 sm:px-4 py-2 text-slate-900 flex flex-col gap-2.5 h-[calc(100vh-65px)] overflow-hidden">
-      {/* TOP HEADER: Active Consultation Timer + Prominent 3-Language Segmented Switcher */}
-      <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 bg-white border border-slate-200 px-4 sm:px-6 py-2.5 rounded-2xl shadow-sm">
+    <div className="w-full max-w-[1600px] mx-auto px-2 sm:px-4 py-2 text-slate-900 flex flex-col gap-2 h-full max-h-[calc(100vh-65px)] min-h-0 overflow-hidden">
+      {/* TOP HEADER: Active Consultation Timer + Stepper Progress + 3-Language Segmented Switcher */}
+      <div className="shrink-0 flex flex-wrap items-center justify-between gap-2.5 bg-white border border-slate-200/90 px-3 sm:px-5 py-2 rounded-2xl shadow-xs">
         <div className="flex items-center gap-3">
           {/* Active Consultation Live Timer */}
-          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-teal-50 border border-teal-200 text-teal-800 shadow-xs">
+          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-teal-50 border border-teal-200 text-teal-800 shadow-2xs">
             <span className="relative flex h-2 w-2 shrink-0">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
@@ -825,31 +1053,35 @@ export const AssessmentInterfaceScreen: React.FC = () => {
 
           <div>
             <h1 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-              <span>Interactive Clinical Consultation</span>
-              <span className="text-[11px] font-semibold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-100 hidden sm:inline-block">
-                Adaptive AI
+              <span>Interactive Consultation</span>
+              <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full border border-teal-200 hidden sm:inline-block">
+                Multimodal AI
               </span>
             </h1>
           </div>
         </div>
 
-        {/* Dynamic Consultation Status Badge */}
-        <div className="hidden lg:flex items-center gap-2">
-          <span
-            className={`text-xs px-3 py-1 rounded-full font-semibold border transition-all ${
-              interviewDurationSec < 300
-                ? 'bg-amber-50 text-amber-800 border-amber-200'
-                : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-            }`}
-          >
-            {interviewDurationSec < 300
-              ? `⏱️ In-Depth Evaluation (Min. 5:00 • ${Math.max(0, Math.ceil((300 - interviewDurationSec) / 60))}m remaining)`
-              : '✓ Minimum 5:00 satisfied • Comprehensive clinical depth reached'}
-          </span>
+        {/* Dynamic Consultation Status Badge & Clinical Domain Tracker */}
+        <div className="hidden lg:flex items-center gap-2.5">
+          <div className="flex items-center gap-2 px-3 py-1 rounded-full border bg-teal-50/80 border-teal-200 text-teal-900 text-xs font-semibold shadow-2xs">
+            <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
+            <span className="font-extrabold text-teal-800">Stage 2: Consultation</span>
+            <span className="text-teal-300">•</span>
+            <span className="font-medium text-teal-700 truncate max-w-[260px]">
+              Domain {Math.min(Math.max(1, interviewTurnNumber), CLINICAL_DOMAINS_MAP.length)}/8: {CLINICAL_DOMAINS_MAP[Math.min(Math.max(0, interviewTurnNumber - 1), CLINICAL_DOMAINS_MAP.length - 1)]}
+            </span>
+          </div>
+          {/* Mini Clinical Progress Bar */}
+          <div className="w-20 h-2 bg-slate-200 rounded-full overflow-hidden shrink-0 shadow-inner" title={`Assessment Progress: ${Math.min(100, Math.round((interviewTurnNumber / 8) * 100))}%`}>
+            <div
+              className="h-full bg-gradient-to-r from-teal-500 to-emerald-500 rounded-full transition-all duration-500"
+              style={{ width: `${Math.min(100, Math.max(12, (interviewTurnNumber / 8) * 100))}%` }}
+            />
+          </div>
         </div>
 
         {/* PROMINENT 3-LANGUAGE SEGMENTED SWITCHER */}
-        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200">
+        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/90 shadow-2xs">
           {SUPPORTED_LANGUAGES.map((lang) => {
             const isSelected = selectedLang === lang.code;
             return (
@@ -857,9 +1089,9 @@ export const AssessmentInterfaceScreen: React.FC = () => {
                 key={lang.code}
                 type="button"
                 onClick={() => handleLanguageChange(lang.code)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                   isSelected
-                    ? 'bg-teal-600 text-white shadow-md shadow-teal-600/20 scale-[1.02]'
+                    ? 'bg-teal-600 text-white shadow-xs shadow-teal-600/30 scale-[1.02]'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                 }`}
                 title={lang.hint}
@@ -874,23 +1106,20 @@ export const AssessmentInterfaceScreen: React.FC = () => {
       </div>
 
       {/* Main Workspace Layout: Main Chat on Left (Wide Hero), Compact Camera Preview on Right (Fixed Box) */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_340px] xl:grid-cols-[1fr_360px] gap-3 min-h-0 overflow-hidden">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_330px] xl:grid-cols-[1fr_350px] gap-2.5 min-h-0 overflow-hidden">
         {/* LEFT / CENTER COLUMN: The Primary Chat Conversation Area */}
-        <div className="flex flex-col gap-2.5 min-w-0 h-full overflow-hidden">
+        <div className="flex flex-col gap-2 min-w-0 h-full overflow-hidden">
           {/* Active Question Banner & Sage Voice Status */}
-          <div className="shrink-0 bg-white border border-slate-200 rounded-2xl p-3 sm:p-3.5 shadow-sm flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <AiVoiceOrb mode={aiMode} size="sm" />
+          <div className="shrink-0 bg-white border border-slate-200/90 rounded-2xl p-2.5 sm:p-3 shadow-xs flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <AiVoiceOrb mode={aiMode} size="xs" />
               <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-black uppercase tracking-wider text-teal-600">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-teal-700">
                     Sage Clinical Companion
                   </span>
-                  <span className="text-[10px] bg-teal-50 border border-teal-200 text-teal-700 px-2 py-0.5 rounded-full font-bold">
+                  <span className="text-[9px] bg-teal-50 border border-teal-200 text-teal-700 px-1.5 py-0.2 rounded-full font-bold">
                     {currentLangObj.flag} {currentLangObj.nativeLabel}
-                  </span>
-                  <span className="text-[10px] bg-teal-50 text-teal-700 border border-teal-200 px-2 py-0.5 rounded-full font-semibold">
-                    Adaptive Dialogue
                   </span>
                 </div>
                 <p className="text-xs font-semibold text-slate-500 truncate">
@@ -902,10 +1131,10 @@ export const AssessmentInterfaceScreen: React.FC = () => {
                       : 'Sage is speaking aloud in English...'
                     : isListening && !micMuted
                     ? selectedLang.startsWith('hi')
-                      ? '🎙️ सेज आपकी हिन्दी बात सुन रही है...'
+                      ? '🎙️ सेज आपकी बात सुन रही है... (बोलें)'
                       : selectedLang.startsWith('mr')
-                      ? '🎙️ सेज तुमचे मराठीत बोलणे ऐकत आहे...'
-                      : `🎙️ Listening in English... Speak naturally`
+                      ? '🎙️ सेज तुमचे बोलणे ऐकत आहे... (बोला)'
+                      : `🎙️ Listening... Speak naturally`
                     : aiMode === 'thinking'
                     ? selectedLang.startsWith('hi')
                       ? 'सेज सोच रही है...'
@@ -917,26 +1146,30 @@ export const AssessmentInterfaceScreen: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
-              {interviewDurationSec >= 300 && (
-                <button
-                  type="button"
-                  onClick={() => concludeInterview()}
-                  className="p-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm transition-all flex items-center gap-1.5"
-                  title="Conclude assessment and review full report"
-                >
-                  <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                  <span className="hidden sm:inline">Complete Assessment</span>
-                </button>
-              )}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Auto-Scroll Toggle Button */}
+              <button
+                type="button"
+                onClick={toggleAutoScroll}
+                className={`p-1.5 px-2.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 shadow-2xs ${
+                  autoScroll
+                    ? 'bg-teal-50 border-teal-200 text-teal-700 hover:bg-teal-100'
+                    : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200'
+                }`}
+                title={autoScroll ? 'Auto-scroll is ON. Click to pause auto-scrolling.' : 'Auto-scroll is PAUSED. Click to turn ON.'}
+              >
+                <span className={`w-2 h-2 rounded-full ${autoScroll ? 'bg-teal-500 animate-pulse' : 'bg-slate-400'}`} />
+                <span className="hidden sm:inline">Auto-Scroll</span>
+                <span className="text-[10px] font-black">{autoScroll ? 'ON' : 'OFF'}</span>
+              </button>
 
               <button
                 type="button"
                 onClick={() => handleReplayQuestion()}
-                className="p-2 px-3 rounded-xl bg-slate-50 hover:bg-teal-50 hover:text-teal-700 text-slate-600 border border-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-all"
+                className="p-1.5 px-2.5 rounded-xl bg-slate-50 hover:bg-teal-50 hover:text-teal-700 text-slate-600 border border-slate-200 text-xs font-semibold flex items-center gap-1 transition-all"
                 title="Repeat active question aloud"
               >
-                <Volume2 className="w-4 h-4 text-teal-600" />
+                <Volume2 className="w-3.5 h-3.5 text-teal-600" />
                 <span className="hidden sm:inline">Repeat</span>
               </button>
 
@@ -944,149 +1177,229 @@ export const AssessmentInterfaceScreen: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleSkipAiSpeech}
-                  className="p-2 px-3 rounded-xl bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-700 text-xs font-bold transition-all flex items-center gap-1.5"
+                  className="p-1.5 px-2.5 rounded-xl bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-700 text-xs font-bold transition-all flex items-center gap-1"
                   title="Skip voice and jump straight to answering"
                 >
-                  <FastForward className="w-4 h-4" />
+                  <FastForward className="w-3.5 h-3.5" />
                   <span>Skip</span>
                 </button>
               )}
+
+              <button
+                type="button"
+                onClick={() => concludeInterview()}
+                className={`p-1.5 px-3 rounded-xl text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 ${
+                  interviewTurnNumber >= 3 || interviewDurationSec >= 120
+                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                }`}
+                title="Conclude assessment and review full report"
+              >
+                <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span className="hidden sm:inline">
+                  {interviewTurnNumber >= 3 ? 'Conclude' : 'Wrap Up'}
+                </span>
+              </button>
             </div>
           </div>
 
-          {/* Chat Messages History Window */}
-          <div className="flex-1 min-h-0 bg-slate-50/70 border border-slate-200 rounded-3xl p-4 sm:p-5 shadow-inner overflow-y-auto flex flex-col gap-3.5">
-            {transcript.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400 space-y-2">
-                <Bot className="w-10 h-10 text-teal-500/60 animate-bounce" />
-                <p className="text-sm font-semibold text-slate-600">Starting conversation with Sage...</p>
-                <p className="text-xs max-w-sm">
-                  You can speak aloud or type your responses in English, Hindi (हिन्दी), or Marathi (मराठी).
-                </p>
-              </div>
-            ) : (
-              transcript.map((msg, idx) => (
-                <motion.div
-                  key={idx}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className={`flex gap-3 max-w-[88%] ${msg.sender === 'user' ? 'ml-auto flex-row-reverse' : 'mr-auto'}`}
-                >
-                  {/* Sender Avatar */}
-                  <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow-sm ${
-                      msg.sender === 'ai'
-                        ? 'bg-gradient-to-tr from-teal-600 to-cyan-500 text-white'
-                        : 'bg-gradient-to-tr from-slate-700 to-slate-900 text-white'
-                    }`}
-                  >
-                    {msg.sender === 'ai' ? <Bot className="w-4 h-4" /> : <User className="w-4 h-4" />}
+          {/* Chat Messages History Window with Floating Auto-Scroll Button */}
+          <div className="relative flex-1 min-h-0 flex flex-col">
+            <div
+              ref={chatContainerRef}
+              onScroll={handleChatScroll}
+              className="flex-1 min-h-0 bg-gradient-to-b from-slate-50/80 to-white/90 border border-slate-200/90 rounded-3xl p-3.5 sm:p-4 shadow-inner overflow-y-auto flex flex-col gap-3 scroll-smooth"
+            >
+              {transcript.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400 space-y-2.5 my-auto">
+                  <div className="w-12 h-12 rounded-2xl bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-600 shadow-2xs">
+                    <Bot className="w-6 h-6 animate-pulse" />
                   </div>
-
-                  {/* Message Card */}
-                  <div
-                    className={`rounded-2xl p-3.5 text-sm shadow-sm transition-all relative ${
-                      msg.sender === 'ai'
-                        ? 'bg-white border border-slate-200/90 text-slate-800 rounded-tl-sm'
-                        : 'bg-teal-600 text-white rounded-tr-sm'
-                    }`}
+                  <p className="text-sm font-bold text-slate-700">Starting consultation with Sage...</p>
+                  <p className="text-xs text-slate-500 max-w-sm leading-relaxed">
+                    You can speak naturally or type your responses in English, Hindi (हिन्दी), or Marathi (मराठी).
+                  </p>
+                  <div className="flex items-center gap-2 text-[11px] text-teal-700 bg-teal-50/70 px-3 py-1 rounded-full border border-teal-100 mt-1">
+                    <Shield className="w-3.5 h-3.5 text-teal-600" />
+                    <span>Encrypted Client-Side Clinical Telemetry</span>
+                  </div>
+                </div>
+              ) : (
+                transcript.map((msg, idx) => (
+                  <motion.div
+                    key={idx}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`flex gap-2.5 max-w-[88%] ${msg.sender === 'user' ? 'ml-auto flex-row-reverse' : 'mr-auto'}`}
                   >
-                    <div className="flex items-center justify-between gap-3 text-[11px] mb-1 opacity-70">
-                      <span className="font-bold flex items-center gap-1">
-                        {msg.sender === 'ai' ? 'MindCare AI · Sage' : user?.fullName || 'You'}
-                        {msg.sender === 'ai' && (
-                          <span className="text-[9px] bg-slate-100 text-teal-700 px-1.5 py-0.2 rounded font-semibold">
-                            {currentLangObj.flag}
-                          </span>
-                        )}
-                      </span>
-                      <span>{msg.time}</span>
+                    {/* Sender Avatar */}
+                    <div
+                      className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shrink-0 shadow-sm ${
+                        msg.sender === 'ai'
+                          ? 'bg-gradient-to-tr from-teal-600 to-cyan-500 text-white'
+                          : 'bg-gradient-to-tr from-slate-700 to-slate-900 text-white'
+                      }`}
+                    >
+                      {msg.sender === 'ai' ? <Bot className="w-4 h-4" /> : <User className="w-4 h-4" />}
                     </div>
 
-                    <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
-
-                    {/* Audio Replay for Sage */}
-                    {msg.sender === 'ai' && (
-                      <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between">
-                        <span className="text-[10px] text-teal-600 font-medium flex items-center gap-1">
-                          <Sparkles className="w-3 h-3" />
-                          Adaptive Follow-up
+                    {/* Message Card */}
+                    <div
+                      className={`rounded-2xl p-3 sm:p-3.5 text-sm shadow-xs transition-all relative ${
+                        msg.sender === 'ai'
+                          ? 'bg-white border border-slate-200/90 text-slate-800 rounded-tl-sm'
+                          : 'bg-gradient-to-r from-teal-600 to-teal-700 text-white rounded-tr-sm shadow-teal-600/10'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3 text-[11px] mb-1 opacity-75">
+                        <span className="font-bold flex items-center gap-1.5">
+                          {msg.sender === 'ai' ? 'MindCare AI · Sage' : user?.fullName || 'You'}
+                          {msg.sender === 'ai' && (
+                            <span className="text-[9px] bg-slate-100 text-teal-700 px-1.5 py-0.2 rounded font-semibold border border-slate-200">
+                              {currentLangObj.flag} Clinician
+                            </span>
+                          )}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => handleReplayQuestion(msg.text)}
-                          className="text-[11px] font-semibold text-slate-500 hover:text-teal-700 flex items-center gap-1 transition-colors"
-                          title="Listen to this question"
-                        >
-                          <Volume2 className="w-3.5 h-3.5 text-teal-600" />
-                          <span>Listen</span>
-                        </button>
+                        <span>{msg.time}</span>
                       </div>
-                    )}
+
+                      <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+
+                      {/* Audio Replay for Sage */}
+                      {msg.sender === 'ai' && (
+                        <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between">
+                          <span className="text-[10px] text-teal-600 font-semibold flex items-center gap-1">
+                            <Sparkles className="w-3 h-3 text-teal-500" />
+                            Clinical Inquiry
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleReplayQuestion(msg.text)}
+                            className="text-[11px] font-bold text-slate-500 hover:text-teal-700 flex items-center gap-1 transition-colors px-2 py-0.5 rounded-md hover:bg-slate-50"
+                            title="Listen to this question aloud"
+                          >
+                            <Volume2 className="w-3.5 h-3.5 text-teal-600" />
+                            <span>Listen</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                ))
+              )}
+
+              {/* Live Streaming Response Card */}
+              {streamingAiText && (
+                <motion.div
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex gap-2.5 max-w-[88%] mr-auto"
+                >
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-teal-600 to-cyan-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+                    <Bot className="w-4 h-4 animate-pulse" />
+                  </div>
+                  <div className="rounded-2xl rounded-tl-sm p-3 sm:p-3.5 text-sm shadow-sm bg-white border border-teal-300 text-slate-800 relative">
+                    <div className="flex items-center justify-between gap-3 text-[11px] mb-1 opacity-75">
+                      <span className="font-bold flex items-center gap-1.5 text-teal-700">
+                        MindCare AI · Sage
+                        <span className="inline-block w-2 h-2 rounded-full bg-teal-500 animate-ping" />
+                      </span>
+                      <span className="text-[10px] text-teal-600 font-semibold flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse" />
+                        Live Streaming...
+                      </span>
+                    </div>
+                    <p className="leading-relaxed whitespace-pre-wrap text-slate-800">
+                      {streamingAiText}
+                      <span className="inline-block w-1.5 h-4 ml-1 bg-teal-600 animate-pulse align-middle" />
+                    </p>
                   </div>
                 </motion.div>
-              ))
-            )}
+              )}
 
-            {/* Live Streaming Response Card */}
-            {streamingAiText && (
-              <motion.div
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="flex gap-3 max-w-[88%] mr-auto"
-              >
-                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-teal-600 to-cyan-500 text-white flex items-center justify-center shrink-0 shadow-sm">
-                  <Bot className="w-4 h-4 animate-pulse" />
-                </div>
-                <div className="rounded-2xl rounded-tl-sm p-3.5 text-sm shadow-sm bg-white border border-teal-300 text-slate-800 relative">
-                  <div className="flex items-center justify-between gap-3 text-[11px] mb-1 opacity-75">
-                    <span className="font-bold flex items-center gap-1.5 text-teal-700">
-                      MindCare AI · Sage
-                      <span className="inline-block w-2 h-2 rounded-full bg-teal-500 animate-ping" />
-                    </span>
-                    <span className="text-[10px] text-teal-600 font-semibold">Streaming...</span>
+              {/* Live User Voice Interim Preview Bubble */}
+              {isListening && interimDisplay && (
+                <motion.div
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex gap-2.5 max-w-[88%] ml-auto flex-row-reverse"
+                >
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-sm animate-pulse">
+                    <Mic className="w-4 h-4" />
                   </div>
-                  <p className="leading-relaxed whitespace-pre-wrap text-slate-800">
-                    {streamingAiText}
-                    <span className="inline-block w-1.5 h-4 ml-1 bg-teal-600 animate-pulse align-middle" />
-                  </p>
-                </div>
-              </motion.div>
-            )}
+                  <div className="rounded-2xl rounded-tr-sm p-3 text-sm shadow-xs bg-teal-50 border border-teal-200 text-teal-900 relative">
+                    <div className="flex items-center justify-between gap-3 text-[11px] mb-1 opacity-75">
+                      <span className="font-bold flex items-center gap-1.5 text-teal-800">
+                        <span>You (Speaking)</span>
+                        <span className="w-2 h-2 rounded-full bg-teal-500 animate-ping" />
+                      </span>
+                      <span className="text-[10px] font-semibold text-teal-700">Listening...</span>
+                    </div>
+                    <p className="leading-relaxed italic text-teal-950 font-medium">{interimDisplay}</p>
+                  </div>
+                </motion.div>
+              )}
 
-            {/* Live Typing / Thinking Indicator (shown only before first stream token arrives) */}
-            {aiMode === 'thinking' && !streamingAiText && (
-              <motion.div
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="flex items-center gap-3 mr-auto max-w-[80%]"
-              >
-                <div className="w-8 h-8 rounded-full bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-600 shadow-sm shrink-0">
-                  <Bot className="w-4 h-4 animate-pulse" />
-                </div>
-                <div className="bg-white border border-slate-200 rounded-2xl rounded-tl-sm p-3 shadow-sm flex items-center gap-2">
-                  <span className="text-xs font-semibold text-slate-600">
-                    {selectedLang.startsWith('hi')
-                      ? 'सेज जवाब तैयार कर रही है'
-                      : selectedLang.startsWith('mr')
-                      ? 'सेज विचार करत आहे'
-                      : 'Sage is thinking'}
-                  </span>
-                  <span className="flex gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </span>
-                </div>
-              </motion.div>
-            )}
+              {/* Live Typing / Thinking Indicator */}
+              {aiMode === 'thinking' && !streamingAiText && (
+                <motion.div
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-center gap-2.5 mr-auto max-w-[80%]"
+                >
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-600 shadow-sm shrink-0">
+                    <Bot className="w-4 h-4 animate-pulse" />
+                  </div>
+                  <div className="bg-white border border-slate-200 rounded-2xl rounded-tl-sm p-2.5 sm:p-3 shadow-xs flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-600">
+                      {selectedLang.startsWith('hi')
+                        ? 'सेज जवाब तैयार कर रही है'
+                        : selectedLang.startsWith('mr')
+                        ? 'सेज विचार करत आहे'
+                        : 'Sage is formulating clinical response'}
+                    </span>
+                    <span className="flex gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-bounce" style={{ animationDelay: '300ms' }} />
+                    </span>
+                  </div>
+                </motion.div>
+              )}
 
-            <div ref={messagesEndRef} />
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Floating Jump to Latest Message Button */}
+            <AnimatePresence>
+              {isUserScrolledUp && (
+                <motion.button
+                  initial={{ opacity: 0, y: 12, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 12, scale: 0.9 }}
+                  type="button"
+                  onClick={() => {
+                    setAutoScroll(true);
+                    scrollToBottom('smooth');
+                  }}
+                  className="absolute bottom-3 right-4 z-20 flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold shadow-lg shadow-teal-600/30 transition-all hover:scale-105 cursor-pointer border border-teal-500/50"
+                  title="Scroll to latest message"
+                >
+                  <ArrowDown className="w-3.5 h-3.5 animate-bounce" />
+                  <span>Latest Message</span>
+                  {newMessagesWhileScrolled > 0 && (
+                    <span className="w-5 h-5 rounded-full bg-white text-teal-700 text-[10px] font-black flex items-center justify-center shadow-xs">
+                      +{newMessagesWhileScrolled}
+                    </span>
+                  )}
+                </motion.button>
+              )}
+            </AnimatePresence>
           </div>
 
-            {/* Quick-Response Suggestion Chips */}
+          {/* Quick-Response Suggestion Chips */}
           <div className="shrink-0 flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-            <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 shrink-0 mr-1">
+            <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 shrink-0 mr-1">
               Suggestions:
             </span>
             {currentLangObj.quickChips.map((chip, idx) => (
@@ -1100,12 +1413,11 @@ export const AssessmentInterfaceScreen: React.FC = () => {
                   cancelCountdown();
                   if (autoSubmit) {
                     silenceTimerRef.current = setTimeout(() => {
-                      console.log('[MindCare Auto-Send] Quick chip clicked, starting auto-send countdown for:', chip);
                       startCountdown(2);
                     }, 1800);
                   }
                 }}
-                className="text-xs shrink-0 px-3 py-1 rounded-full bg-white border border-slate-200 hover:border-teal-400 hover:bg-teal-50 hover:text-teal-800 text-slate-700 transition-all shadow-2xs"
+                className="text-xs shrink-0 px-3 py-1 rounded-full bg-white border border-slate-200 hover:border-teal-400 hover:bg-teal-50 hover:text-teal-800 text-slate-700 transition-all shadow-2xs cursor-pointer"
               >
                 {chip}
               </button>
@@ -1113,7 +1425,7 @@ export const AssessmentInterfaceScreen: React.FC = () => {
           </div>
 
           {/* Response Studio: Live Speech Input, Auto-Send, Send & Clear */}
-          <div className="shrink-0 bg-white border border-slate-200 p-3 sm:p-4 rounded-3xl shadow-sm flex flex-col gap-2.5">
+          <div className="shrink-0 bg-white border border-slate-200/90 p-2.5 sm:p-3.5 rounded-2xl shadow-xs flex flex-col gap-2">
             {/* Countdown Banner if auto-send silence detected */}
             <AnimatePresence>
               {countdown !== null && (
@@ -1121,12 +1433,12 @@ export const AssessmentInterfaceScreen: React.FC = () => {
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
-                  className="flex items-center justify-between px-4 py-2.5 rounded-2xl bg-teal-50 border border-teal-200 text-teal-900 text-xs font-semibold shadow-sm overflow-hidden"
+                  className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-teal-50 border border-teal-200 text-teal-900 text-xs font-semibold shadow-2xs overflow-hidden"
                 >
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-teal-500 animate-ping" />
                     <span>
-                      Pause detected. Sending response in{' '}
+                      Pause detected. Auto-sending in{' '}
                       <strong className="text-teal-700 text-sm">{countdown}s</strong>...
                     </span>
                   </div>
@@ -1138,14 +1450,14 @@ export const AssessmentInterfaceScreen: React.FC = () => {
                         setAutoSubmit(false);
                         showToast('Auto-send paused — take your time!');
                       }}
-                      className="px-3 py-1 rounded-xl bg-white border border-teal-300 text-teal-700 hover:bg-teal-100 text-xs font-bold transition-all"
+                      className="px-2.5 py-0.5 rounded-lg bg-white border border-teal-300 text-teal-700 hover:bg-teal-100 text-xs font-bold transition-all"
                     >
-                      Keep Thinking / Edit
+                      Keep Editing
                     </button>
                     <button
                       type="button"
                       onClick={() => handleSendAnswer(userInputRef.current || userInput)}
-                      className="px-3 py-1 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition-all shadow-sm"
+                      className="px-2.5 py-0.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition-all shadow-xs"
                     >
                       Send Now
                     </button>
@@ -1155,7 +1467,7 @@ export const AssessmentInterfaceScreen: React.FC = () => {
             </AnimatePresence>
 
             {/* Editable Text Area with Live Word Streaming */}
-            <div className="relative rounded-2xl border border-slate-200 bg-slate-50 focus-within:bg-white focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-100 transition-all p-3 flex flex-col min-h-[85px]">
+            <div className="relative rounded-xl border border-slate-200 bg-slate-50 focus-within:bg-white focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-100 transition-all p-2.5 flex flex-col min-h-[75px]">
               <textarea
                 value={userInput}
                 onChange={(e) => {
@@ -1166,7 +1478,6 @@ export const AssessmentInterfaceScreen: React.FC = () => {
                   cancelCountdown();
                   if (autoSubmit && val.trim().length >= 1) {
                     silenceTimerRef.current = setTimeout(() => {
-                      console.log('[MindCare Auto-Send] Pause detected after typing, starting countdown for:', val);
                       startCountdown(3);
                     }, 2500);
                   }
@@ -1183,7 +1494,7 @@ export const AssessmentInterfaceScreen: React.FC = () => {
               />
 
               {/* Bottom info row inside textarea */}
-              <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1.5 border-t border-slate-200/60 mt-1">
+              <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-200/60 mt-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   {isListening && !micMuted && (
                     <span className="text-teal-700 font-semibold flex items-center gap-1.5 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
@@ -1193,7 +1504,7 @@ export const AssessmentInterfaceScreen: React.FC = () => {
                   )}
                   {isManuallyEditedRef.current && (
                     <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 font-medium">
-                      Keyboard edits active
+                      Keyboard input
                     </span>
                   )}
                 </div>
@@ -1207,7 +1518,7 @@ export const AssessmentInterfaceScreen: React.FC = () => {
             </div>
 
             {/* Bottom Actions: Auto-Send Toggle, Send & Clear */}
-            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -1239,7 +1550,7 @@ export const AssessmentInterfaceScreen: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleClearInput}
-                    className="p-2 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 text-xs font-semibold flex items-center gap-1 transition-all"
+                    className="p-1.5 px-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 text-xs font-semibold flex items-center gap-1 transition-all"
                     title="Clear text to re-speak"
                   >
                     <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
@@ -1272,9 +1583,9 @@ export const AssessmentInterfaceScreen: React.FC = () => {
         </div>
 
         {/* RIGHT COLUMN: Compact Fixed-Size Camera Preview & Telemetry Panel (Non-scrolling camera view) */}
-        <div className="flex flex-col gap-2.5 shrink-0 w-full lg:w-[340px] xl:w-[360px] h-full overflow-y-auto scrollbar-none">
+        <div className="flex flex-col gap-2 shrink-0 w-full lg:w-[330px] xl:w-[350px] h-full overflow-y-auto scrollbar-none">
           {/* COMPACT WEBCAM BOX: Fixed aspect ratio, NEVER stretches vertically when chat grows! */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-3 shadow-sm flex flex-col gap-2.5">
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-2.5 shadow-xs flex flex-col gap-2">
             <div className="flex items-center justify-between px-1">
               <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
                 <Video className="w-3.5 h-3.5 text-teal-600" />
@@ -1287,7 +1598,7 @@ export const AssessmentInterfaceScreen: React.FC = () => {
             </div>
 
             {/* FIXED COMPACT WEBCAM FRAME */}
-            <div className="relative w-full aspect-[4/3] max-h-[220px] rounded-2xl overflow-hidden border-2 border-teal-500/30 bg-slate-950 shadow-md">
+            <div className="relative w-full aspect-[4/3] max-h-[190px] rounded-xl overflow-hidden border border-teal-500/30 bg-slate-950 shadow-xs">
               <CameraPreview
                 cameraOn={cameraOn}
                 onToggleCamera={toggleCamera}
@@ -1300,14 +1611,14 @@ export const AssessmentInterfaceScreen: React.FC = () => {
             </div>
 
             {/* Camera & Mic Quick Hardware Bar */}
-            <div className="flex items-center justify-between gap-2 pt-1">
+            <div className="flex items-center justify-between gap-2 pt-0.5">
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={toggleCamera}
-                  className={`p-2 rounded-xl border text-xs font-semibold flex items-center gap-1 transition-all ${
+                  className={`p-1.5 px-2 rounded-lg border text-xs font-semibold flex items-center gap-1 transition-all ${
                     !cameraOn
-                      ? 'bg-rose-600 border-rose-600 text-white shadow-sm'
+                      ? 'bg-rose-600 border-rose-600 text-white shadow-xs'
                       : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
                   }`}
                   title={cameraOn ? 'Turn Off Camera' : 'Turn On Camera'}
@@ -1319,9 +1630,9 @@ export const AssessmentInterfaceScreen: React.FC = () => {
                 <button
                   type="button"
                   onClick={toggleMic}
-                  className={`p-2 rounded-xl border text-xs font-semibold flex items-center gap-1 transition-all ${
+                  className={`p-1.5 px-2 rounded-lg border text-xs font-semibold flex items-center gap-1 transition-all ${
                     micMuted
-                      ? 'bg-rose-600 border-rose-600 text-white shadow-sm'
+                      ? 'bg-rose-600 border-rose-600 text-white shadow-xs'
                       : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
                   }`}
                   title={micMuted ? 'Unmute Microphone' : 'Mute Microphone'}
@@ -1335,8 +1646,8 @@ export const AssessmentInterfaceScreen: React.FC = () => {
               <div className="flex-1 flex justify-end pl-2">
                 <AudioVisualizer
                   isRecording={!micMuted}
-                  barCount={12}
-                  height={22}
+                  barCount={10}
+                  height={18}
                   isSpeaking={aiMode === 'speaking' || (isListening && !micMuted)}
                 />
               </div>
@@ -1344,18 +1655,18 @@ export const AssessmentInterfaceScreen: React.FC = () => {
           </div>
 
           {/* Real-time Facial Expression Telemetry */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm space-y-3">
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-3 shadow-xs space-y-2">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
-                <Smile className="w-4 h-4 text-teal-600" />
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                <Smile className="w-3.5 h-3.5 text-teal-600" />
                 <span>Detected Facial Affect</span>
               </div>
-              <span className="text-[10px] font-bold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full border border-teal-100">
+              <span className="text-[9px] font-bold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full border border-teal-100">
                 face-api.js
               </span>
             </div>
 
-            <div className="p-3 rounded-2xl bg-teal-50/60 border border-teal-100 flex items-center justify-between">
+            <div className="p-2.5 rounded-xl bg-teal-50/60 border border-teal-100 flex items-center justify-between">
               <div>
                 <p className="text-xs font-extrabold text-teal-900 capitalize">
                   {currentFaceEmotion?.dominantEmotion || 'Calm & Attentive'}
@@ -1372,13 +1683,13 @@ export const AssessmentInterfaceScreen: React.FC = () => {
           </div>
 
           {/* Active Multilingual Status Card */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm space-y-2.5">
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
-              <Globe className="w-4 h-4 text-teal-600" />
-              <span>Multilingual Dialogue Mode</span>
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-3 shadow-xs space-y-2">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+              <Globe className="w-3.5 h-3.5 text-teal-600" />
+              <span>Multilingual Dialogue Engine</span>
             </div>
 
-            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 space-y-1.5">
+            <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/80 text-xs text-slate-700 space-y-1">
               <div className="flex items-center justify-between">
                 <span className="text-slate-500 font-medium">Active Language:</span>
                 <span className="font-bold text-teal-700">
@@ -1396,17 +1707,17 @@ export const AssessmentInterfaceScreen: React.FC = () => {
             </div>
 
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              Click the language buttons at the top anytime to switch between <strong>English</strong>, <strong>हिन्दी</strong>, and <strong>मराठी</strong>. Sage will instantly adapt its speech and understanding.
+              Switch languages anytime above between <strong>English</strong>, <strong>हिन्दी</strong>, and <strong>मराठी</strong>. Sage adapts voice and dialogue instantly.
             </p>
           </div>
 
           {/* Session Termination Button */}
           <button
             type="button"
-            onClick={() => setScreen('completed')}
-            className="w-full p-3 rounded-2xl bg-white hover:bg-rose-50 hover:text-rose-600 text-slate-600 font-bold text-xs flex items-center justify-center gap-2 border border-slate-200 hover:border-rose-200 shadow-sm transition-all"
+            onClick={() => concludeInterview()}
+            className="w-full p-2.5 rounded-xl bg-white hover:bg-rose-50 hover:text-rose-600 text-slate-600 font-bold text-xs flex items-center justify-center gap-2 border border-slate-200 hover:border-rose-200 shadow-2xs transition-all mt-auto cursor-pointer"
           >
-            <PhoneOff className="w-4 h-4 text-rose-500" />
+            <PhoneOff className="w-3.5 h-3.5 text-rose-500" />
             <span>End Consultation Early</span>
           </button>
         </div>

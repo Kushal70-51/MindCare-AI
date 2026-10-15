@@ -11,6 +11,10 @@ const nextConfig = {
   },
   // Turned off so the assistant's speech/effect sequences don't fire twice in dev.
   reactStrictMode: false,
+  devIndicators: {
+    buildActivity: false,
+    appIsrStatus: false,
+  },
   webpack: (config) => {
     // face-api.js (via @tensorflow/tfjs-core) pulls in Node-only code paths
     // (fs, node-fetch's optional 'encoding') that are never used in the
